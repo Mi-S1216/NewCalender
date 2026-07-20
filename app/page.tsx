@@ -362,14 +362,15 @@ function Dashboard({ userId }: { userId: string }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto pb-4 flex-1">
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-7 gap-2 text-center font-bold mb-2">
+        {/* コンテナクエリの基準となる親要素 */}
+        <div className="pb-4 flex-1 w-full [container-type:inline-size]">
+          <div className="w-full">
+            <div className="grid grid-cols-7 gap-1 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[3.5cqi] md:text-base">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 md:gap-2">
               {getDaysInMonth().map((day, index) => {
-                if (!day) return <div key={`empty-${index}`} className="min-h-[140px] bg-[#87CEFA]/10 rounded" />
+                if (!day) return <div key={`empty-${index}`} className="aspect-[6/7] md:aspect-auto md:min-h-[140px] bg-[#87CEFA]/10 rounded" />
                 const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
                 
                 const dailyTx = transactions.filter(t => t.transaction_date === dateString)
@@ -386,26 +387,26 @@ function Dashboard({ userId }: { userId: string }) {
                 const dateObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
                 const dayOfWeek = dateObj.getDay()
                 
-                let borderClass = 'border-2 border-[#87CEFA]'
-                if (HOLIDAYS.includes(dateString)) borderClass = 'border-4 border-[#BA0200] shadow-[0_0_10px_rgba(186,2,0,0.3)]'
-                else if (dayOfWeek === 0) borderClass = 'border-4 border-[#FF3356] shadow-[0_0_10px_rgba(255,51,86,0.3)]'
-                else if (dayOfWeek === 6) borderClass = 'border-4 border-[#3DFFF3] shadow-[0_0_10px_rgba(61,255,243,0.3)]'
+                let borderClass = 'border-[0.2cqi] md:border-2 border-[#87CEFA]'
+                if (HOLIDAYS.includes(dateString)) borderClass = 'border-[0.4cqi] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
+                else if (dayOfWeek === 0) borderClass = 'border-[0.4cqi] md:border-4 border-[#FF3356] md:shadow-[0_0_10px_rgba(255,51,86,0.3)]'
+                else if (dayOfWeek === 6) borderClass = 'border-[0.4cqi] md:border-4 border-[#3DFFF3] md:shadow-[0_0_10px_rgba(61,255,243,0.3)]'
 
                 return (
                   <div 
                     key={day} 
                     onClick={() => handleDateClick(dateString)}
-                    className={`min-h-[140px] rounded p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
+                    className={`aspect-[6/7] md:aspect-auto md:min-h-[140px] rounded p-[1cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-[0.5cqi] md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
                   >
-                    <span className={`font-bold ml-1 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
-                    <div className="flex flex-col gap-1 mt-1">
+                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[3.5cqi] md:text-base leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
+                    <div className="flex flex-col gap-[0.5cqi] md:gap-1 mt-[1cqi] md:mt-1">
                       {dailySchedules.map(sch => {
                         const catColor = categories.find(c => c.id === sch.category_id)?.color_code || '#cccccc'
                         return (
                           <div 
                             key={sch.id} 
                             onClick={(e) => { e.stopPropagation(); setSelectedSchedule(sch); }}
-                            className="text-xs px-1.5 py-0.5 rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
+                            className="text-[2.2cqi] md:text-xs leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
                             style={{ backgroundColor: catColor, color: getContrastTextColor(catColor) }}
                           >
                             {sch.is_all_day ? '終日' : sch.start_time.substring(11, 16)} {sch.title}
@@ -413,9 +414,9 @@ function Dashboard({ userId }: { userId: string }) {
                         )
                       })}
                     </div>
-                    <div className="mt-auto flex flex-col items-end text-xs font-bold w-full pt-1">
-                      {dIncome > 0 && <span className="text-[#0000CD] bg-[#87CEFA]/30 px-1 rounded mb-0.5 truncate max-w-full">+{dIncome}</span>}
-                      {dExpense > 0 && <span className="text-[#FF3356] bg-[#FF3356]/10 px-1 rounded truncate max-w-full">-{dExpense}</span>}
+                    <div className="mt-auto flex flex-col items-end text-[2.2cqi] md:text-xs font-bold w-full pt-[0.5cqi] md:pt-1">
+                      {dIncome > 0 && <span className="text-[#0000CD] bg-[#87CEFA]/30 px-[1cqi] md:px-1 rounded mb-[0.5cqi] md:mb-0.5 truncate max-w-full">+{dIncome}</span>}
+                      {dExpense > 0 && <span className="text-[#FF3356] bg-[#FF3356]/10 px-[1cqi] md:px-1 rounded truncate max-w-full">-{dExpense}</span>}
                     </div>
                   </div>
                 )
