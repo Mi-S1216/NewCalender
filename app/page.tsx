@@ -45,9 +45,13 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoginMode, setIsLoginMode] = useState(true)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setIsCheckingAuth(false)
+    })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
@@ -62,6 +66,8 @@ export default function App() {
       if (error) alert('登録失敗: ' + error.message)
     }
   }
+
+  if (isCheckingAuth) return <div className="min-h-screen bg-gray-100 flex items-center justify-center font-bold text-gray-500">読み込み中...</div>
 
   if (!session) {
     return (
@@ -131,16 +137,43 @@ function Dashboard({ userId }: { userId: string }) {
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0]
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0]
     
-    const [tRes, fRes, cRes, sRes] = await Promise.all([
+    // 1. カテゴリを取得
+    let { data: catData, error: catError } = await supabase.from('categories').select('*')
+    
+    // 2. 新規ユーザーでカテゴリが0件の場合、初期カテゴリを自動作成する
+    if (catData && catData.length === 0 && !catError) {
+      const defaultCategories = [
+        { user_id: userId, type: 'schedule', name: '仕事', color_code: '#FF3356', is_default: true },
+        { user_id: userId, type: 'schedule', name: '遊び', color_code: '#230AF2', is_default: true },
+        { user_id: userId, type: 'schedule', name: '外食', color_code: '#FFE204', is_default: true },
+        { user_id: userId, type: 'schedule', name: 'その他', color_code: '#0B970D', is_default: true },
+        { user_id: userId, type: 'income', name: '給料', color_code: '#5311FF', is_default: true },
+        { user_id: userId, type: 'income', name: '臨時収入', color_code: '#EB80F6', is_default: true },
+        { user_id: userId, type: 'income', name: 'お小遣い', color_code: '#0C8E00', is_default: true },
+        { user_id: userId, type: 'expense', name: '食費', color_code: '#E6055C', is_default: true },
+        { user_id: userId, type: 'expense', name: '交通費', color_code: '#8F0000', is_default: true },
+        { user_id: userId, type: 'expense', name: '交際費', color_code: '#D78D00', is_default: true },
+        { user_id: userId, type: 'expense', name: '日用品費', color_code: '#DD6C91', is_default: true },
+        { user_id: userId, type: 'expense', name: 'クレカ引き落とし', color_code: '#0D4227', is_default: true },
+        { user_id: userId, type: 'expense', name: 'その他', color_code: '#040F30', is_default: true },
+      ]
+      await supabase.from('categories').insert(defaultCategories)
+      
+      // 再取得
+      const retryCat = await supabase.from('categories').select('*')
+      catData = retryCat.data
+    }
+
+    // 3. その他のデータを取得
+    const [tRes, fRes, sRes] = await Promise.all([
       supabase.from('todos').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('finance_transactions').select('*').gte('transaction_date', startOfMonth).lte('transaction_date', endOfMonth),
-      supabase.from('categories').select('*'),
       supabase.from('schedules').select('*').gte('start_time', `${startOfMonth}T00:00:00Z`).lte('start_time', `${endOfMonth}T23:59:59Z`)
     ])
 
     if (tRes.data) setTodos(tRes.data)
     if (fRes.data) setTransactions(fRes.data)
-    if (cRes.data) setCategories(cRes.data)
+    if (catData) setCategories(catData)
     if (sRes.data) setSchedules(sRes.data)
   }
 
@@ -306,7 +339,6 @@ function Dashboard({ userId }: { userId: string }) {
           </div>
         </div>
 
-        {/* スマホ用横スクロール対応コンテナ */}
         <div className="overflow-x-auto pb-4 custom-scrollbar flex-1">
           <div className="min-w-[900px]">
             <div className="grid grid-cols-7 gap-2 text-center font-bold mb-2">
