@@ -137,10 +137,8 @@ function Dashboard({ userId }: { userId: string }) {
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0]
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0]
     
-    // 1. カテゴリを取得
     let { data: catData, error: catError } = await supabase.from('categories').select('*')
     
-    // 2. 新規ユーザーでカテゴリが0件の場合、初期カテゴリを自動作成する
     if (catData && catData.length === 0 && !catError) {
       const defaultCategories = [
         { user_id: userId, type: 'schedule', name: '仕事', color_code: '#FF3356', is_default: true },
@@ -157,14 +155,13 @@ function Dashboard({ userId }: { userId: string }) {
         { user_id: userId, type: 'expense', name: 'クレカ引き落とし', color_code: '#0D4227', is_default: true },
         { user_id: userId, type: 'expense', name: 'その他', color_code: '#040F30', is_default: true },
       ]
-      await supabase.from('categories').insert(defaultCategories)
+      const { error: catInitError } = await supabase.from('categories').insert(defaultCategories)
+      if (catInitError) alert('初期カテゴリの作成に失敗しました: ' + catInitError.message)
       
-      // 再取得
       const retryCat = await supabase.from('categories').select('*')
       catData = retryCat.data
     }
 
-    // 3. その他のデータを取得
     const [tRes, fRes, sRes] = await Promise.all([
       supabase.from('todos').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('finance_transactions').select('*').gte('transaction_date', startOfMonth).lte('transaction_date', endOfMonth),
@@ -190,28 +187,33 @@ function Dashboard({ userId }: { userId: string }) {
     e.preventDefault()
     if (!todoTitle.trim()) return
     const targetMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
-    await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+    const { error } = await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+    if (error) alert('ToDo追加エラー: ' + error.message)
     setTodoTitle(''); setTodoDueDate(''); setTodoPriority(3); fetchData();
   }
 
   const toggleTodo = async (id: string, status: boolean) => {
-    await supabase.from('todos').update({ is_completed: !status }).eq('id', id)
+    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id)
+    if (error) alert('更新エラー: ' + error.message)
     fetchData()
   }
 
   const deleteTodo = async (id: string) => {
-    await supabase.from('todos').delete().eq('id', id)
+    const { error } = await supabase.from('todos').delete().eq('id', id)
+    if (error) alert('削除エラー: ' + error.message)
     fetchData()
   }
 
   const addCategory = async () => {
     if (!newCatName.trim()) return
-    await supabase.from('categories').insert([{ user_id: userId, type: modalType, name: newCatName, color_code: newCatColor, is_default: false }])
+    const { error } = await supabase.from('categories').insert([{ user_id: userId, type: modalType, name: newCatName, color_code: newCatColor, is_default: false }])
+    if (error) alert('カテゴリ追加エラー: ' + error.message)
     setNewCatName(''); setIsAddingCategory(false); fetchData();
   }
 
   const deleteTransaction = async (id: string) => {
-    await supabase.from('finance_transactions').delete().eq('id', id)
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id)
+    if (error) alert('削除エラー: ' + error.message)
     fetchData()
   }
 
@@ -233,7 +235,7 @@ function Dashboard({ userId }: { userId: string }) {
 
   const addData = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedDates.length === 0 || !categoryId) return
+    if (selectedDates.length === 0 || !categoryId) return alert('日付またはカテゴリが選択されていません。')
 
     if (modalType === 'schedule') {
       if (!scheduleTitle.trim()) return
@@ -243,7 +245,7 @@ function Dashboard({ userId }: { userId: string }) {
         const { data: recData, error } = await supabase.from('recurring_schedules').insert([{
           user_id: userId, start_date: targetDate, end_date: scheduleEndDate, day_of_week: new Date(targetDate).getDay()
         }]).select()
-        if (error) return console.error(error)
+        if (error) return alert('定期ルール作成エラー: ' + error.message)
         const recurringId = recData[0].id
         
         const scheduleInserts = []
@@ -256,7 +258,8 @@ function Dashboard({ userId }: { userId: string }) {
           scheduleInserts.push({ user_id: userId, category_id: categoryId, recurring_id: recurringId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay })
           curr.setDate(curr.getDate() + 7)
         }
-        await supabase.from('schedules').insert(scheduleInserts)
+        const { error: insErr } = await supabase.from('schedules').insert(scheduleInserts)
+        if (insErr) alert('予定登録エラー: ' + insErr.message)
 
       } else {
         const scheduleInserts = selectedDates.map(dateStr => {
@@ -264,7 +267,8 @@ function Dashboard({ userId }: { userId: string }) {
           const endDateTime = isAllDay ? `${dateStr}T23:59:59Z` : `${dateStr}T${endTime}:00Z`
           return { user_id: userId, category_id: categoryId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay }
         })
-        await supabase.from('schedules').insert(scheduleInserts)
+        const { error: insErr } = await supabase.from('schedules').insert(scheduleInserts)
+        if (insErr) alert('予定登録エラー: ' + insErr.message)
       }
       setScheduleTitle(''); setScheduleMode('single'); setScheduleEndDate('');
     } else {
@@ -275,12 +279,15 @@ function Dashboard({ userId }: { userId: string }) {
         const ruleInserts = selectedDates.map(dateStr => ({
           user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, day_of_month: parseInt(dateStr.split('-')[2], 10)
         }))
-        await supabase.from('finance_recurring_rules').insert(ruleInserts)
+        const { error: ruleErr } = await supabase.from('finance_recurring_rules').insert(ruleInserts)
+        if (ruleErr) alert('固定費ルール登録エラー: ' + ruleErr.message)
       }
       const txInserts = selectedDates.map(dateStr => ({
         user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
       }))
-      await supabase.from('finance_transactions').insert(txInserts)
+      const { error: txErr } = await supabase.from('finance_transactions').insert(txInserts)
+      if (txErr) alert('収支登録エラー: ' + txErr.message)
+      
       setAmountStr('')
     }
     
@@ -290,9 +297,11 @@ function Dashboard({ userId }: { userId: string }) {
   const deleteSchedule = async (type: 'single' | 'future') => {
     if (!selectedSchedule) return
     if (type === 'single') {
-      await supabase.from('schedules').delete().eq('id', selectedSchedule.id)
+      const { error } = await supabase.from('schedules').delete().eq('id', selectedSchedule.id)
+      if (error) alert('削除エラー: ' + error.message)
     } else if (type === 'future' && selectedSchedule.recurring_id) {
-      await supabase.from('schedules').delete().eq('recurring_id', selectedSchedule.recurring_id).gte('start_time', selectedSchedule.start_time)
+      const { error } = await supabase.from('schedules').delete().eq('recurring_id', selectedSchedule.recurring_id).gte('start_time', selectedSchedule.start_time)
+      if (error) alert('削除エラー: ' + error.message)
     }
     setSelectedSchedule(null); fetchData();
   }
