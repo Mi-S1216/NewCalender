@@ -347,7 +347,7 @@ function Dashboard({ userId }: { userId: string }) {
 
   return (
     <main className="min-h-screen bg-[#87CEFA]/30 p-2 md:p-8 flex flex-col xl:flex-row gap-4 md:gap-6 relative pb-32 font-sans">
-      <section className="flex-1 bg-[#F0F8FF] p-2 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] overflow-hidden flex flex-col">
+      <section className="flex-1 bg-[#F0F8FF] p-2 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
         <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-2 md:gap-4">
           <div className="flex items-center gap-2 md:gap-4">
             <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="px-3 py-1.5 md:px-4 md:py-2 bg-[#00BFFF] text-white rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors text-sm md:text-base">先月</button>
@@ -371,14 +371,14 @@ function Dashboard({ userId }: { userId: string }) {
 
         {/* コンテナクエリの基準となる親要素 */}
         <div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
-          <div className="w-full">
-            <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[3.5cqi] md:text-base">
+          <div className="w-[105%] -ml-[2.5%]">
+            <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[2.45cqi] md:text-[11px]">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
             </div>
             {/* gapを極小にし、セルの領域を最大化 */}
             <div className="grid grid-cols-7 gap-[2px] md:gap-2">
               {getDaysInMonth().map((day, index) => {
-                if (!day) return <div key={`empty-${index}`} className="aspect-[4/6] md:aspect-auto md:min-h-[140px] bg-[#87CEFA]/10 rounded-sm md:rounded" />
+                if (!day) return <div key={`empty-${index}`} className="aspect-[21/33] md:aspect-auto md:min-h-[154px] bg-[#87CEFA]/10 rounded-sm md:rounded" />
                 const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
                 
                 const dailyTx = transactions.filter(t => t.transaction_date === dateString)
@@ -404,10 +404,10 @@ function Dashboard({ userId }: { userId: string }) {
                   <div 
                     key={day} 
                     onClick={() => handleDateClick(dateString)}
-                    // スマホ: 縦長(4/6), padding極小 / PC: 固定高さ
-                    className={`aspect-[4/6] md:aspect-auto md:min-h-[140px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
+                    // スマホ: アスペクト比変更, padding極小 / PC: 固定高さ1.1倍
+                    className={`aspect-[21/33] md:aspect-auto md:min-h-[154px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
                   >
-                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[4cqi] md:text-base leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
+                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[2.8cqi] md:text-[11px] leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
                     <div className="flex flex-col gap-[0.5cqi] md:gap-1 mt-[1cqi] md:mt-1">
                       {dailySchedules.map(sch => {
                         const catColor = categories.find(c => c.id === sch.category_id)?.color_code || '#cccccc'
@@ -415,7 +415,7 @@ function Dashboard({ userId }: { userId: string }) {
                           <div 
                             key={sch.id} 
                             onClick={(e) => { e.stopPropagation(); setSelectedSchedule(sch); }}
-                            className="text-[2.6cqi] md:text-xs leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded-sm md:rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
+                            className="text-[1.82cqi] md:text-[8.4px] leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded-sm md:rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
                             style={{ backgroundColor: catColor, color: getContrastTextColor(catColor) }}
                           >
                             {sch.is_all_day ? '終日' : sch.start_time.substring(11, 16)} {sch.title}
@@ -423,7 +423,7 @@ function Dashboard({ userId }: { userId: string }) {
                         )
                       })}
                     </div>
-                    <div className="mt-auto flex flex-col items-end text-[2.6cqi] md:text-xs font-bold w-full pt-[0.5cqi] md:pt-1">
+                    <div className="mt-auto flex flex-col items-end text-[1.82cqi] md:text-[8.4px] font-bold w-full pt-[0.5cqi] md:pt-1">
                       {dIncome > 0 && <span className="text-[#0000CD] bg-[#87CEFA]/30 px-[1cqi] md:px-1 rounded-sm md:rounded mb-[0.5cqi] md:mb-0.5 truncate max-w-full">+{dIncome}</span>}
                       {dExpense > 0 && <span className="text-[#FF3356] bg-[#FF3356]/10 px-[1cqi] md:px-1 rounded-sm md:rounded truncate max-w-full">-{dExpense}</span>}
                     </div>
