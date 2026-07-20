@@ -115,34 +115,48 @@ function Dashboard({ userId }: { userId: string }) {
   const [categories, setCategories] = useState<Category[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   
+  const [currentDate, setCurrentDate] = useState<Date | null>(null)
+
+  // ToDo
   const [todoTitle, setTodoTitle] = useState('')
   const [todoPriority, setTodoPriority] = useState<number>(3)
   const [todoDueDate, setTodoDueDate] = useState('')
-  const [currentDate, setCurrentDate] = useState<Date | null>(null)
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
 
+  // カレンダー操作
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
   const [selectedDates, setSelectedDates] = useState<string[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
 
+  // 収支・予定登録
   const [modalType, setModalType] = useState<'schedule' | 'income' | 'expense'>('schedule')
   const [amountStr, setAmountStr] = useState<string>('')
   const [isRecurring, setIsRecurring] = useState(false)
+  const [editingTxId, setEditingTxId] = useState<string | null>(null) // 収支編集用
   
   const [scheduleTitle, setScheduleTitle] = useState('')
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('10:00')
   const [isAllDay, setIsAllDay] = useState(false)
-  
   const [scheduleMode, setScheduleMode] = useState<'single' | 'weekly'>('single')
   const [scheduleEndDate, setScheduleEndDate] = useState('') 
 
+  // カテゴリ関連
   const [categoryId, setCategoryId] = useState<string>('')
   const [isCatDropdownOpen, setIsCatDropdownOpen] = useState(false)
   const [isManageCatModalOpen, setIsManageCatModalOpen] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState('#FF3356')
 
+  // スケジュール詳細・編集用
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false)
+  const [editSchTitle, setEditSchTitle] = useState('')
+  const [editSchStart, setEditSchStart] = useState('')
+  const [editSchEnd, setEditSchEnd] = useState('')
+  const [editSchIsAllDay, setEditSchIsAllDay] = useState(false)
+  const [editSchCatId, setEditSchCatId] = useState('')
+  const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false)
 
   useEffect(() => { setCurrentDate(new Date()) }, [])
 
@@ -192,17 +206,39 @@ function Dashboard({ userId }: { userId: string }) {
 
   useEffect(() => {
     const filteredCategories = categories.filter(c => c.type === modalType)
-    if (filteredCategories.length > 0) setCategoryId(filteredCategories[0].id)
-    else setCategoryId('')
+    if (filteredCategories.length > 0 && !editingTxId) setCategoryId(filteredCategories[0].id)
+    else if (!editingTxId) setCategoryId('')
     setIsCatDropdownOpen(false)
-  }, [modalType, categories])
+  }, [modalType, categories, editingTxId])
 
-  const addTodo = async (e: React.FormEvent) => {
+  // =====================
+  // ToDo処理
+  // =====================
+  const submitTodo = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!todoTitle.trim()) return
-    const targetMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
-    await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+    if (editingTodoId) {
+      await supabase.from('todos').update({
+        title: todoTitle, due_date: todoDueDate || null, priority: todoPriority
+      }).eq('id', editingTodoId)
+      setEditingTodoId(null)
+    } else {
+      const targetMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
+      await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+    }
     setTodoTitle(''); setTodoDueDate(''); setTodoPriority(3); fetchData();
+  }
+
+  const editTodo = (todo: Todo) => {
+    setEditingTodoId(todo.id)
+    setTodoTitle(todo.title)
+    setTodoDueDate(todo.due_date || '')
+    setTodoPriority(todo.priority)
+  }
+
+  const cancelEditTodo = () => {
+    setEditingTodoId(null)
+    setTodoTitle(''); setTodoDueDate(''); setTodoPriority(3);
   }
 
   const toggleTodo = async (id: string, status: boolean) => {
@@ -213,6 +249,9 @@ function Dashboard({ userId }: { userId: string }) {
     await supabase.from('todos').delete().eq('id', id); fetchData();
   }
 
+  // =====================
+  // カテゴリ処理
+  // =====================
   const addCategory = async () => {
     if (!newCatName.trim()) return
     const currentMax = categories.filter(c => c.type === modalType).length
@@ -226,34 +265,22 @@ function Dashboard({ userId }: { userId: string }) {
 
   const moveCategory = async (currentIndex: number, direction: 'up' | 'down') => {
     const currentTypeCats = categories.filter(c => c.type === modalType)
-    if (
-      (direction === 'up' && currentIndex === 0) ||
-      (direction === 'down' && currentIndex === currentTypeCats.length - 1)
-    ) return
-
+    if ((direction === 'up' && currentIndex === 0) || (direction === 'down' && currentIndex === currentTypeCats.length - 1)) return
     const newCats = [...currentTypeCats]
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    
-    const temp = newCats[currentIndex]
-    newCats[currentIndex] = newCats[targetIndex]
-    newCats[targetIndex] = temp
-
+    const temp = newCats[currentIndex]; newCats[currentIndex] = newCats[targetIndex]; newCats[targetIndex] = temp;
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
       return { ...c, sort_order: newMatch }
     })
     setCategories(updatedCategories)
-
-    for (let i = 0; i < newCats.length; i++) {
-      await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
-    }
+    for (let i = 0; i < newCats.length; i++) await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
   }
 
-  const deleteTransaction = async (id: string) => {
-    await supabase.from('finance_transactions').delete().eq('id', id); fetchData();
-  }
-
+  // =====================
+  // モーダル・収支・予定登録処理
+  // =====================
   const handleDateClick = (dateString: string) => {
     if (isMultiSelectMode) {
       setSelectedDates(prev => prev.includes(dateString) ? prev.filter(d => d !== dateString) : [...prev, dateString])
@@ -265,7 +292,18 @@ function Dashboard({ userId }: { userId: string }) {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     if (!isMultiSelectMode) setSelectedDates([])
-    setAmountStr(''); setScheduleTitle(''); setIsCatDropdownOpen(false);
+    setAmountStr(''); setScheduleTitle(''); setIsCatDropdownOpen(false); setEditingTxId(null);
+  }
+
+  const startEditTransaction = (tx: FinanceTransaction) => {
+    setEditingTxId(tx.id)
+    setModalType(tx.type)
+    setAmountStr(tx.amount.toString())
+    setCategoryId(tx.category_id)
+  }
+
+  const deleteTransaction = async (id: string) => {
+    await supabase.from('finance_transactions').delete().eq('id', id); fetchData();
   }
 
   const addData = async (e: React.FormEvent) => {
@@ -274,7 +312,6 @@ function Dashboard({ userId }: { userId: string }) {
 
     if (modalType === 'schedule') {
       if (!scheduleTitle.trim()) return
-      
       if (scheduleMode === 'weekly' && scheduleEndDate && selectedDates.length === 1) {
         const targetDate = selectedDates[0]
         const { data: recData, error } = await supabase.from('recurring_schedules').insert([{
@@ -282,7 +319,6 @@ function Dashboard({ userId }: { userId: string }) {
         }]).select()
         if (error) return alert('定期ルール作成エラー: ' + error.message)
         const recurringId = recData[0].id
-        
         const scheduleInserts = []
         const curr = new Date(targetDate)
         const end = new Date(scheduleEndDate)
@@ -307,20 +343,54 @@ function Dashboard({ userId }: { userId: string }) {
       const numAmount = Number(amountStr)
       if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力してください。')
 
-      if (isRecurring) {
-        const ruleInserts = selectedDates.map(dateStr => ({
-          user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, day_of_month: parseInt(dateStr.split('-')[2], 10)
+      if (editingTxId) {
+        await supabase.from('finance_transactions').update({
+          amount: numAmount, category_id: categoryId, type: modalType
+        }).eq('id', editingTxId)
+        setEditingTxId(null)
+      } else {
+        if (isRecurring) {
+          const ruleInserts = selectedDates.map(dateStr => ({
+            user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, day_of_month: parseInt(dateStr.split('-')[2], 10)
+          }))
+          await supabase.from('finance_recurring_rules').insert(ruleInserts)
+        }
+        const txInserts = selectedDates.map(dateStr => ({
+          user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
         }))
-        await supabase.from('finance_recurring_rules').insert(ruleInserts)
+        await supabase.from('finance_transactions').insert(txInserts)
       }
-      const txInserts = selectedDates.map(dateStr => ({
-        user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
-      }))
-      await supabase.from('finance_transactions').insert(txInserts)
       setAmountStr('')
     }
     
     setIsRecurring(false); setIsModalOpen(false); setSelectedDates([]); fetchData();
+  }
+
+  // =====================
+  // 予定編集・削除処理
+  // =====================
+  const startEditSchedule = () => {
+    if (!selectedSchedule) return
+    setEditSchTitle(selectedSchedule.title)
+    setEditSchIsAllDay(selectedSchedule.is_all_day)
+    setEditSchStart(formatLocalTime(selectedSchedule.start_time))
+    setEditSchEnd(formatLocalTime(selectedSchedule.end_time))
+    setEditSchCatId(selectedSchedule.category_id)
+    setIsEditingSchedule(true)
+  }
+
+  const saveEditSchedule = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedSchedule || !editSchTitle.trim()) return
+    const dateStr = selectedSchedule.start_time.substring(0, 10)
+    const startDateTime = editSchIsAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${editSchStart}:00+09:00`
+    const endDateTime = editSchIsAllDay ? `${dateStr}T23:59:59+09:00` : `${dateStr}T${editSchEnd}:00+09:00`
+
+    await supabase.from('schedules').update({
+      title: editSchTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: editSchIsAllDay, category_id: editSchCatId
+    }).eq('id', selectedSchedule.id)
+
+    setIsEditingSchedule(false); setSelectedSchedule(null); fetchData();
   }
 
   const deleteSchedule = async (type: 'single' | 'future') => {
@@ -330,6 +400,9 @@ function Dashboard({ userId }: { userId: string }) {
     setSelectedSchedule(null); fetchData();
   }
 
+  // =====================
+  // カレンダー描画用
+  // =====================
   const getDaysInMonth = () => {
     if (!currentDate) return []
     const y = currentDate.getFullYear(); const m = currentDate.getMonth();
@@ -350,6 +423,7 @@ function Dashboard({ userId }: { userId: string }) {
 
   return (
     <main className="min-h-screen bg-[#87CEFA]/30 p-2 md:p-8 flex flex-col xl:flex-row gap-4 md:gap-6 relative pb-32 font-sans">
+      {/* -------------------- カレンダーエリア -------------------- */}
       <section className="flex-1 bg-[#F0F8FF] p-2 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
         <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-2 md:gap-4">
           <div className="flex items-center gap-2 md:gap-4">
@@ -386,7 +460,6 @@ function Dashboard({ userId }: { userId: string }) {
                 const dIncome = dailyTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
                 const dExpense = dailyTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
                 
-                // UTC文字列をローカル時刻に変換して日付判定・ソートを行う
                 const dailySchedules = schedules.filter(s => getLocalYYYYMMDD(new Date(s.start_time)) === dateString).sort((a, b) => {
                   if (a.is_all_day && !b.is_all_day) return -1
                   if (!a.is_all_day && b.is_all_day) return 1
@@ -436,45 +509,56 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       </section>
 
+      {/* -------------------- ToDoエリア -------------------- */}
       <section className="w-full xl:w-[400px] bg-[#F0F8FF] p-4 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
         <h2 className="text-lg md:text-xl font-bold mb-4 border-b-2 border-[#00BFFF] pb-2">ToDoリスト</h2>
-        <form onSubmit={addTodo} className="flex flex-col gap-2 mb-4">
+        <form onSubmit={submitTodo} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded border border-[#87CEFA]">
           <input type="text" value={todoTitle} onChange={e => setTodoTitle(e.target.value)} placeholder="タスク名" required className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
           <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
           <select value={todoPriority} onChange={e => setTodoPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none font-bold text-sm md:text-base">
             {[5,4,3,2,1].map(p => <option key={p} value={p}>優先度 {p}</option>)}
           </select>
-          <button type="submit" className="bg-[#00BFFF] text-white p-2 rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors">追加</button>
+          <div className="flex gap-2">
+            {editingTodoId && <button type="button" onClick={cancelEditTodo} className="flex-1 bg-gray-200 text-gray-700 p-2 rounded font-bold hover:bg-gray-300 transition-colors">キャンセル</button>}
+            <button type="submit" className={`flex-1 text-white p-2 rounded font-bold shadow-md transition-colors ${editingTodoId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
+              {editingTodoId ? '更新' : '追加'}
+            </button>
+          </div>
         </form>
         <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {todos.map(todo => (
             <li key={todo.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
-              <div className="flex items-start gap-2 md:gap-3">
+              <div className="flex items-start gap-2 md:gap-3 flex-1">
                 <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
-                <div className="flex flex-col">
-                  <span className={`font-bold text-sm md:text-base ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
+                <div className="flex flex-col flex-1">
+                  <span className={`font-bold text-sm md:text-base break-words ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
                   <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
                     {todo.due_date && <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">期日: {todo.due_date.replace(/-/g, '/')}</span>}
                   </div>
                 </div>
               </div>
-              <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline ml-2 whitespace-nowrap">削除</button>
+              <div className="flex flex-col gap-1 shrink-0 ml-2">
+                <button onClick={() => editTodo(todo)} className="text-[#00BFFF] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">編集</button>
+                <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">削除</button>
+              </div>
             </li>
           ))}
         </ul>
       </section>
 
+      {/* -------------------- 貯金額表示 -------------------- */}
       <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
         <div className="text-[10px] md:text-xs opacity-90 mb-0.5 md:mb-1">今月のトータル貯金額</div>
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
 
+      {/* -------------------- カテゴリ管理モーダル -------------------- */}
       {isManageCatModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">カテゴリの管理と並び替え</h3>
+              <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">カテゴリの管理</h3>
               <button onClick={() => setIsManageCatModalOpen(false)} className="text-gray-500 hover:text-[#FF3356] font-bold text-2xl">&times;</button>
             </div>
             
@@ -492,26 +576,11 @@ function Dashboard({ userId }: { userId: string }) {
             <h4 className="text-sm font-bold text-[#0000CD] mb-2 shrink-0">並び替え (矢印タップで移動)</h4>
             <ul className="space-y-2 overflow-y-auto pr-1 custom-scrollbar flex-1">
               {categories.filter(c => c.type === modalType).map((c, index, arr) => (
-                <li 
-                  key={c.id}
-                  className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded hover:shadow-md transition-shadow"
-                >
+                <li key={c.id} className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-2">
                     <div className="flex flex-col gap-1 mr-1">
-                      <button 
-                        onClick={() => moveCategory(index, 'up')}
-                        disabled={index === 0}
-                        className={`text-lg leading-none ${index === 0 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}
-                      >
-                        ▲
-                      </button>
-                      <button 
-                        onClick={() => moveCategory(index, 'down')}
-                        disabled={index === arr.length - 1}
-                        className={`text-lg leading-none ${index === arr.length - 1 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}
-                      >
-                        ▼
-                      </button>
+                      <button onClick={() => moveCategory(index, 'up')} disabled={index === 0} className={`text-lg leading-none ${index === 0 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}>▲</button>
+                      <button onClick={() => moveCategory(index, 'down')} disabled={index === arr.length - 1} className={`text-lg leading-none ${index === arr.length - 1 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}>▼</button>
                     </div>
                     <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: c.color_code }} />
                     <span className="font-bold text-[#0000CD] text-sm md:text-base">{c.name}</span>
@@ -524,6 +593,7 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
+      {/* -------------------- 登録・一括操作モーダル -------------------- */}
       {isModalOpen && selectedDates.length > 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -531,30 +601,37 @@ function Dashboard({ userId }: { userId: string }) {
               <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-2xl">&times;</button>
             </div>
+            
+            {/* この日の収支記録 */}
             {selectedDates.length === 1 && selectedDayTransactions.length > 0 && (
               <div className="mb-4 md:mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
                 <h4 className="font-bold text-sm mb-2 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
                 <div className="space-y-2">
                   {selectedDayTransactions.map(tx => (
                     <div key={tx.id} className="flex justify-between items-center text-sm border-b border-gray-100 pb-1">
-                      <div>
+                      <div className="flex-1">
                         <span className={`font-bold mr-2 ${tx.type === 'income' ? 'text-[#0000CD]' : 'text-[#FF3356]'}`}>{tx.type === 'income' ? '収入' : '支出'}</span>
                         <span className="text-gray-700 font-semibold">{categories.find(c => c.id === tx.category_id)?.name}</span>
                         <span className="font-bold ml-2 text-black">{tx.amount.toLocaleString()}円</span>
                       </div>
-                      <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline p-1">削除</button>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => startEditTransaction(tx)} className="text-[#00BFFF] text-xs font-bold hover:underline p-1">編集</button>
+                        <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline p-1">削除</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
             
+            {/* モーダルタブ */}
             <div className="flex gap-1 mb-4 p-1 bg-[#87CEFA]/30 rounded-lg">
-              <button onClick={() => setModalType('schedule')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
-              <button onClick={() => setModalType('income')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
-              <button onClick={() => setModalType('expense')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
+              <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
+              <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
+              <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
             </div>
             
+            {/* メインフォーム */}
             <form onSubmit={addData} className="flex flex-col gap-4">
               {modalType === 'schedule' ? (
                 <>
@@ -595,10 +672,12 @@ function Dashboard({ userId }: { userId: string }) {
                     <label className="block text-sm font-bold mb-1 text-[#0000CD]">金額 (円)</label>
                     <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
                   </div>
-                  <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
-                    <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} id="recurring" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
-                    <label htmlFor="recurring" className="text-xs cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
-                  </div>
+                  {!editingTxId && (
+                    <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
+                      <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} id="recurring" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
+                      <label htmlFor="recurring" className="text-xs cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
+                    </div>
+                  )}
                 </>
               )}
               
@@ -641,28 +720,83 @@ function Dashboard({ userId }: { userId: string }) {
 
               <div className="flex gap-3 mt-2 md:mt-4">
                 <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md">閉じる</button>
-                <button type="submit" className="flex-1 bg-[#00BFFF] text-white p-3 rounded font-bold hover:bg-[#0000CD] transition-colors shadow-md text-base md:text-lg">登録</button>
+                <button type="submit" className={`flex-1 text-white p-3 rounded font-bold shadow-md text-base md:text-lg transition-colors ${editingTxId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
+                  {editingTxId ? '更新' : '登録'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* -------------------- 予定の詳細・編集モーダル -------------------- */}
       {selectedSchedule && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-6 rounded-xl w-full max-w-80 shadow-2xl border-2 border-[#00BFFF]">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
-              <h3 className="text-lg md:text-xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
-            </div>
-            <p className="text-sm mb-6 text-[#00BFFF] font-bold border-b-2 border-[#87CEFA] pb-2 inline-block">
-              {selectedSchedule.is_all_day ? '終日' : `${formatLocalTime(selectedSchedule.start_time)} 〜 ${formatLocalTime(selectedSchedule.end_time)}`}
-            </p>
-            <div className="flex flex-col gap-3">
-              <button onClick={() => deleteSchedule('single')} className="w-full bg-white text-[#FF3356] border-2 border-[#FF3356] p-3 md:p-2 rounded font-bold hover:bg-[#FF3356] hover:text-white transition-colors shadow-md text-sm md:text-base">この予定のみ削除</button>
-              {selectedSchedule.recurring_id && <button onClick={() => deleteSchedule('future')} className="w-full bg-[#BA0200] text-white p-3 md:p-2 rounded font-bold hover:bg-black transition-colors shadow-md text-sm md:text-base">これ以降の定期予定も削除</button>}
-              <button onClick={() => setSelectedSchedule(null)} className="w-full bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 md:p-2 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md mt-2 text-sm md:text-base">閉じる</button>
-            </div>
+          <div className="bg-[#F0F8FF] p-6 rounded-xl w-full max-w-80 shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto">
+            {isEditingSchedule ? (
+              <form onSubmit={saveEditSchedule} className="flex flex-col gap-4">
+                <h3 className="text-lg md:text-xl font-bold text-[#0000CD] border-b-2 border-[#00BFFF] pb-2">予定の編集</h3>
+                <div>
+                  <label className="block text-sm font-bold mb-1 text-[#0000CD]">タイトル</label>
+                  <input type="text" value={editSchTitle} onChange={e => setEditSchTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
+                </div>
+                <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
+                  <input type="checkbox" checked={editSchIsAllDay} onChange={e => setEditSchIsAllDay(e.target.checked)} id="edit-allday" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
+                  <label htmlFor="edit-allday" className="text-sm cursor-pointer font-bold text-[#0000CD]">終日</label>
+                </div>
+                {!editSchIsAllDay && (
+                  <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
+                    <input type="time" value={editSchStart} onChange={e => setEditSchStart(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                    <span className="font-bold text-[#0000CD]">〜</span>
+                    <input type="time" value={editSchEnd} onChange={e => setEditSchEnd(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                  </div>
+                )}
+                <div className="relative">
+                  <label className="block text-sm font-bold mb-1 text-[#0000CD]">カテゴリ</label>
+                  <div onClick={() => setIsEditCatDropdownOpen(!isEditCatDropdownOpen)} className="border-2 border-[#87CEFA] p-3 rounded w-full flex items-center justify-between cursor-pointer bg-white hover:border-[#00BFFF] transition-colors">
+                    {editSchCatId ? (
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === editSchCatId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-base truncate">{categories.find(c => c.id === editSchCatId)?.name}</span>
+                      </div>
+                    ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
+                    <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
+                  </div>
+                  {isEditCatDropdownOpen && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-[#00BFFF] rounded shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                      {categories.filter(c => c.type === 'schedule').map(c => (
+                        <div key={c.id} onClick={() => { setEditSchCatId(c.id); setIsEditCatDropdownOpen(false); }} className="flex items-center gap-3 p-3 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0">
+                          <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
+                          <span className="font-bold text-[#0000CD] truncate">{c.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <button type="button" onClick={() => setIsEditingSchedule(false)} className="flex-1 bg-gray-200 text-gray-700 p-2 rounded font-bold hover:bg-gray-300 transition-colors">キャンセル</button>
+                  <button type="submit" className="flex-1 bg-[#0000CD] text-white p-2 rounded font-bold shadow-md">更新</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
+                    <h3 className="text-lg md:text-xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
+                  </div>
+                  <button onClick={startEditSchedule} className="text-[#00BFFF] font-bold text-sm hover:underline shrink-0">編集</button>
+                </div>
+                <p className="text-sm mb-6 text-[#00BFFF] font-bold border-b-2 border-[#87CEFA] pb-2 inline-block">
+                  {selectedSchedule.is_all_day ? '終日' : `${formatLocalTime(selectedSchedule.start_time)} 〜 ${formatLocalTime(selectedSchedule.end_time)}`}
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button onClick={() => deleteSchedule('single')} className="w-full bg-white text-[#FF3356] border-2 border-[#FF3356] p-3 md:p-2 rounded font-bold hover:bg-[#FF3356] hover:text-white transition-colors shadow-md text-sm md:text-base">この予定のみ削除</button>
+                  {selectedSchedule.recurring_id && <button onClick={() => deleteSchedule('future')} className="w-full bg-[#BA0200] text-white p-3 md:p-2 rounded font-bold hover:bg-black transition-colors shadow-md text-sm md:text-base">これ以降の定期予定も削除</button>}
+                  <button onClick={() => setSelectedSchedule(null)} className="w-full bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 md:p-2 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md mt-2 text-sm md:text-base">閉じる</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
