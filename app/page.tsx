@@ -45,6 +45,12 @@ const getLocalYYYYMMDD = (d: Date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// DBからのISO時刻文字列をローカル時刻(HH:mm)にフォーマットする関数
+const formatLocalTime = (isoString: string) => {
+  const d = new Date(isoString)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 interface Todo { id: string; title: string; due_date: string | null; priority: number; is_completed: boolean; }
 interface FinanceTransaction { id: string; type: 'income' | 'expense'; amount: number; transaction_date: string; category_id: string; }
 interface Category { id: string; type: string; name: string; color_code: string; sort_order: number; }
@@ -228,12 +234,10 @@ function Dashboard({ userId }: { userId: string }) {
     const newCats = [...currentTypeCats]
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
     
-    // スワップ
     const temp = newCats[currentIndex]
     newCats[currentIndex] = newCats[targetIndex]
     newCats[targetIndex] = temp
 
-    // 状態更新
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
@@ -241,7 +245,6 @@ function Dashboard({ userId }: { userId: string }) {
     })
     setCategories(updatedCategories)
 
-    // DB更新
     for (let i = 0; i < newCats.length; i++) {
       await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
     }
@@ -369,13 +372,11 @@ function Dashboard({ userId }: { userId: string }) {
           </div>
         </div>
 
-        {/* コンテナクエリの基準となる親要素 */}
         <div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
           <div className="w-[105%] -ml-[2.5%]">
             <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[2.45cqi] md:text-[11px]">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
             </div>
-            {/* gapを極小にし、セルの領域を最大化 */}
             <div className="grid grid-cols-7 gap-[2px] md:gap-2">
               {getDaysInMonth().map((day, index) => {
                 if (!day) return <div key={`empty-${index}`} className="aspect-[21/33] md:aspect-auto md:min-h-[154px] bg-[#87CEFA]/10 rounded-sm md:rounded" />
@@ -385,10 +386,11 @@ function Dashboard({ userId }: { userId: string }) {
                 const dIncome = dailyTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
                 const dExpense = dailyTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
                 
-                const dailySchedules = schedules.filter(s => s.start_time.startsWith(dateString)).sort((a, b) => {
+                // UTC文字列をローカル時刻に変換して日付判定・ソートを行う
+                const dailySchedules = schedules.filter(s => getLocalYYYYMMDD(new Date(s.start_time)) === dateString).sort((a, b) => {
                   if (a.is_all_day && !b.is_all_day) return -1
                   if (!a.is_all_day && b.is_all_day) return 1
-                  return a.start_time.localeCompare(b.start_time)
+                  return new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
                 })
                 
                 const isSelected = selectedDates.includes(dateString)
@@ -404,7 +406,6 @@ function Dashboard({ userId }: { userId: string }) {
                   <div 
                     key={day} 
                     onClick={() => handleDateClick(dateString)}
-                    // スマホ: アスペクト比変更, padding極小 / PC: 固定高さ1.1倍
                     className={`aspect-[21/33] md:aspect-auto md:min-h-[154px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
                   >
                     <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[2.8cqi] md:text-[11px] leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
@@ -418,7 +419,7 @@ function Dashboard({ userId }: { userId: string }) {
                             className="text-[1.82cqi] md:text-[8.4px] leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded-sm md:rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
                             style={{ backgroundColor: catColor, color: getContrastTextColor(catColor) }}
                           >
-                            {sch.is_all_day ? '終日' : sch.start_time.substring(11, 16)} {sch.title}
+                            {sch.is_all_day ? '終日' : formatLocalTime(sch.start_time)} {sch.title}
                           </div>
                         )
                       })}
@@ -469,7 +470,6 @@ function Dashboard({ userId }: { userId: string }) {
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
 
-      {/* カテゴリ管理モーダル (タップ並び替え) */}
       {isManageCatModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] flex flex-col">
@@ -656,7 +656,7 @@ function Dashboard({ userId }: { userId: string }) {
               <h3 className="text-lg md:text-xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
             </div>
             <p className="text-sm mb-6 text-[#00BFFF] font-bold border-b-2 border-[#87CEFA] pb-2 inline-block">
-              {selectedSchedule.is_all_day ? '終日' : `${selectedSchedule.start_time.substring(11, 16)} 〜 ${selectedSchedule.end_time.substring(11, 16)}`}
+              {selectedSchedule.is_all_day ? '終日' : `${formatLocalTime(selectedSchedule.start_time)} 〜 ${formatLocalTime(selectedSchedule.end_time)}`}
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={() => deleteSchedule('single')} className="w-full bg-white text-[#FF3356] border-2 border-[#FF3356] p-3 md:p-2 rounded font-bold hover:bg-[#FF3356] hover:text-white transition-colors shadow-md text-sm md:text-base">この予定のみ削除</button>
