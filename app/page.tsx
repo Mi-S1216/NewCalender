@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient, Session } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://othhbwmgztbjmqgrvsml.supabase.co'
-const supabaseKey = 'sb_publishable_eMIsYIeAbbVlNYboCM2w6g_6aZVb9NC'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 const CUSTOM_COLORS = [
