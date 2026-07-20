@@ -218,16 +218,22 @@ function Dashboard({ userId }: { userId: string }) {
     await supabase.from('categories').delete().eq('id', id); fetchData();
   }
 
-  const handleDropCategory = async (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault()
-    const dragIndex = parseInt(e.dataTransfer.getData('catIndex'), 10)
-    if (dragIndex === dropIndex || isNaN(dragIndex)) return
-
+  const moveCategory = async (currentIndex: number, direction: 'up' | 'down') => {
     const currentTypeCats = categories.filter(c => c.type === modalType)
-    const newCats = [...currentTypeCats]
-    const [dragged] = newCats.splice(dragIndex, 1)
-    newCats.splice(dropIndex, 0, dragged)
+    if (
+      (direction === 'up' && currentIndex === 0) ||
+      (direction === 'down' && currentIndex === currentTypeCats.length - 1)
+    ) return
 
+    const newCats = [...currentTypeCats]
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    
+    // スワップ
+    const temp = newCats[currentIndex]
+    newCats[currentIndex] = newCats[targetIndex]
+    newCats[targetIndex] = temp
+
+    // 状態更新
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
@@ -235,6 +241,7 @@ function Dashboard({ userId }: { userId: string }) {
     })
     setCategories(updatedCategories)
 
+    // DB更新
     for (let i = 0; i < newCats.length; i++) {
       await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
     }
@@ -339,38 +346,39 @@ function Dashboard({ userId }: { userId: string }) {
   const selectedDayTransactions = selectedDates.length === 1 ? transactions.filter(t => t.transaction_date === selectedDates[0]) : []
 
   return (
-    <main className="min-h-screen bg-[#87CEFA]/30 p-4 md:p-8 flex flex-col xl:flex-row gap-6 relative pb-32 font-sans">
-      <section className="flex-1 bg-[#F0F8FF] p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] overflow-hidden flex flex-col">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="px-4 py-2 bg-[#00BFFF] text-white rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors">先月</button>
-            <h2 className="text-3xl font-extrabold">{currentDate.getFullYear()}/{String(currentDate.getMonth() + 1).padStart(2, '0')}</h2>
-            <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="px-4 py-2 bg-[#00BFFF] text-white rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors">来月</button>
+    <main className="min-h-screen bg-[#87CEFA]/30 p-2 md:p-8 flex flex-col xl:flex-row gap-4 md:gap-6 relative pb-32 font-sans">
+      <section className="flex-1 bg-[#F0F8FF] p-2 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] overflow-hidden flex flex-col">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-2 md:gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
+            <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="px-3 py-1.5 md:px-4 md:py-2 bg-[#00BFFF] text-white rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors text-sm md:text-base">先月</button>
+            <h2 className="text-xl md:text-3xl font-extrabold">{currentDate.getFullYear()}/{String(currentDate.getMonth() + 1).padStart(2, '0')}</h2>
+            <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="px-3 py-1.5 md:px-4 md:py-2 bg-[#00BFFF] text-white rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors text-sm md:text-base">来月</button>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setIsMultiSelectMode(!isMultiSelectMode); setSelectedDates([]); }} className={`px-4 py-2 rounded font-bold text-sm shadow-md transition-colors border-2 ${isMultiSelectMode ? 'bg-[#0000CD] text-white border-[#0000CD]' : 'bg-white text-[#00BFFF] border-[#00BFFF] hover:bg-[#87CEFA]/20'}`}>
-              複数日選択モード: {isMultiSelectMode ? 'ON' : 'OFF'}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button onClick={() => { setIsMultiSelectMode(!isMultiSelectMode); setSelectedDates([]); }} className={`px-2 py-1 md:px-4 md:py-2 rounded font-bold text-xs md:text-sm shadow-md transition-colors border-2 ${isMultiSelectMode ? 'bg-[#0000CD] text-white border-[#0000CD]' : 'bg-white text-[#00BFFF] border-[#00BFFF] hover:bg-[#87CEFA]/20'}`}>
+              複数選択: {isMultiSelectMode ? 'ON' : 'OFF'}
             </button>
             {isMultiSelectMode && selectedDates.length > 0 && (
-              <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-[#FF3356] text-white rounded font-bold text-sm shadow-md animate-bounce border-2 border-[#FF3356]">
+              <button onClick={() => setIsModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-[#FF3356] text-white rounded font-bold text-xs md:text-sm shadow-md animate-bounce border-2 border-[#FF3356]">
                 {selectedDates.length}日分を登録
               </button>
             )}
-            <button onClick={() => supabase.auth.signOut()} className="px-4 py-2 bg-white text-[#BA0200] border-2 border-[#BA0200] rounded font-bold text-sm hover:bg-[#BA0200] hover:text-white ml-2 transition-colors whitespace-nowrap shadow-md">
+            <button onClick={() => supabase.auth.signOut()} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#BA0200] border-2 border-[#BA0200] rounded font-bold text-xs md:text-sm hover:bg-[#BA0200] hover:text-white transition-colors whitespace-nowrap shadow-md">
               ログアウト
             </button>
           </div>
         </div>
 
         {/* コンテナクエリの基準となる親要素 */}
-        <div className="pb-4 flex-1 w-full [container-type:inline-size]">
+        <div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
           <div className="w-full">
-            <div className="grid grid-cols-7 gap-1 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[3.5cqi] md:text-base">
+            <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[3.5cqi] md:text-base">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
             </div>
-            <div className="grid grid-cols-7 gap-1 md:gap-2">
+            {/* gapを極小にし、セルの領域を最大化 */}
+            <div className="grid grid-cols-7 gap-[2px] md:gap-2">
               {getDaysInMonth().map((day, index) => {
-                if (!day) return <div key={`empty-${index}`} className="aspect-[6/7] md:aspect-auto md:min-h-[140px] bg-[#87CEFA]/10 rounded" />
+                if (!day) return <div key={`empty-${index}`} className="aspect-[4/6] md:aspect-auto md:min-h-[140px] bg-[#87CEFA]/10 rounded-sm md:rounded" />
                 const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
                 
                 const dailyTx = transactions.filter(t => t.transaction_date === dateString)
@@ -387,18 +395,19 @@ function Dashboard({ userId }: { userId: string }) {
                 const dateObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
                 const dayOfWeek = dateObj.getDay()
                 
-                let borderClass = 'border-[0.2cqi] md:border-2 border-[#87CEFA]'
-                if (HOLIDAYS.includes(dateString)) borderClass = 'border-[0.4cqi] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
-                else if (dayOfWeek === 0) borderClass = 'border-[0.4cqi] md:border-4 border-[#FF3356] md:shadow-[0_0_10px_rgba(255,51,86,0.3)]'
-                else if (dayOfWeek === 6) borderClass = 'border-[0.4cqi] md:border-4 border-[#3DFFF3] md:shadow-[0_0_10px_rgba(61,255,243,0.3)]'
+                let borderClass = 'border-[1px] md:border-2 border-[#87CEFA]'
+                if (HOLIDAYS.includes(dateString)) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
+                else if (dayOfWeek === 0) borderClass = 'border-[2px] md:border-4 border-[#FF3356] md:shadow-[0_0_10px_rgba(255,51,86,0.3)]'
+                else if (dayOfWeek === 6) borderClass = 'border-[2px] md:border-4 border-[#3DFFF3] md:shadow-[0_0_10px_rgba(61,255,243,0.3)]'
 
                 return (
                   <div 
                     key={day} 
                     onClick={() => handleDateClick(dateString)}
-                    className={`aspect-[6/7] md:aspect-auto md:min-h-[140px] rounded p-[1cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-[0.5cqi] md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
+                    // スマホ: 縦長(4/6), padding極小 / PC: 固定高さ
+                    className={`aspect-[4/6] md:aspect-auto md:min-h-[140px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
                   >
-                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[3.5cqi] md:text-base leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
+                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[4cqi] md:text-base leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
                     <div className="flex flex-col gap-[0.5cqi] md:gap-1 mt-[1cqi] md:mt-1">
                       {dailySchedules.map(sch => {
                         const catColor = categories.find(c => c.id === sch.category_id)?.color_code || '#cccccc'
@@ -406,7 +415,7 @@ function Dashboard({ userId }: { userId: string }) {
                           <div 
                             key={sch.id} 
                             onClick={(e) => { e.stopPropagation(); setSelectedSchedule(sch); }}
-                            className="text-[2.2cqi] md:text-xs leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
+                            className="text-[2.6cqi] md:text-xs leading-[1.2] md:leading-normal px-[1cqi] md:px-1.5 py-[0.5cqi] md:py-0.5 rounded-sm md:rounded truncate cursor-pointer hover:opacity-80 font-semibold shadow-sm"
                             style={{ backgroundColor: catColor, color: getContrastTextColor(catColor) }}
                           >
                             {sch.is_all_day ? '終日' : sch.start_time.substring(11, 16)} {sch.title}
@@ -414,9 +423,9 @@ function Dashboard({ userId }: { userId: string }) {
                         )
                       })}
                     </div>
-                    <div className="mt-auto flex flex-col items-end text-[2.2cqi] md:text-xs font-bold w-full pt-[0.5cqi] md:pt-1">
-                      {dIncome > 0 && <span className="text-[#0000CD] bg-[#87CEFA]/30 px-[1cqi] md:px-1 rounded mb-[0.5cqi] md:mb-0.5 truncate max-w-full">+{dIncome}</span>}
-                      {dExpense > 0 && <span className="text-[#FF3356] bg-[#FF3356]/10 px-[1cqi] md:px-1 rounded truncate max-w-full">-{dExpense}</span>}
+                    <div className="mt-auto flex flex-col items-end text-[2.6cqi] md:text-xs font-bold w-full pt-[0.5cqi] md:pt-1">
+                      {dIncome > 0 && <span className="text-[#0000CD] bg-[#87CEFA]/30 px-[1cqi] md:px-1 rounded-sm md:rounded mb-[0.5cqi] md:mb-0.5 truncate max-w-full">+{dIncome}</span>}
+                      {dExpense > 0 && <span className="text-[#FF3356] bg-[#FF3356]/10 px-[1cqi] md:px-1 rounded-sm md:rounded truncate max-w-full">-{dExpense}</span>}
                     </div>
                   </div>
                 )
@@ -426,75 +435,86 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       </section>
 
-      <section className="w-full xl:w-[400px] bg-[#F0F8FF] p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
-        <h2 className="text-xl font-bold mb-4 border-b-2 border-[#00BFFF] pb-2">ToDoリスト</h2>
+      <section className="w-full xl:w-[400px] bg-[#F0F8FF] p-4 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
+        <h2 className="text-lg md:text-xl font-bold mb-4 border-b-2 border-[#00BFFF] pb-2">ToDoリスト</h2>
         <form onSubmit={addTodo} className="flex flex-col gap-2 mb-4">
-          <input type="text" value={todoTitle} onChange={e => setTodoTitle(e.target.value)} placeholder="タスク名" required className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none" />
-          <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none" />
-          <select value={todoPriority} onChange={e => setTodoPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none font-bold">
+          <input type="text" value={todoTitle} onChange={e => setTodoTitle(e.target.value)} placeholder="タスク名" required className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
+          <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
+          <select value={todoPriority} onChange={e => setTodoPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none font-bold text-sm md:text-base">
             {[5,4,3,2,1].map(p => <option key={p} value={p}>優先度 {p}</option>)}
           </select>
           <button type="submit" className="bg-[#00BFFF] text-white p-2 rounded hover:bg-[#0000CD] font-bold shadow-md transition-colors">追加</button>
         </form>
         <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {todos.map(todo => (
-            <li key={todo.id} className="flex justify-between items-center p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
-              <div className="flex items-start gap-3">
-                <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-5 h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
+            <li key={todo.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
+              <div className="flex items-start gap-2 md:gap-3">
+                <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
                 <div className="flex flex-col">
-                  <span className={`font-bold ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded text-white shadow-sm" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
-                    {todo.due_date && <span className="text-xs text-gray-500 font-semibold">期日: {todo.due_date.replace(/-/g, '/')}</span>}
+                  <span className={`font-bold text-sm md:text-base ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
+                  <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
+                    {todo.due_date && <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">期日: {todo.due_date.replace(/-/g, '/')}</span>}
                   </div>
                 </div>
               </div>
-              <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-sm font-bold hover:underline ml-2 whitespace-nowrap">削除</button>
+              <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline ml-2 whitespace-nowrap">削除</button>
             </li>
           ))}
         </ul>
       </section>
 
-      <div className="fixed bottom-6 right-6 p-4 rounded-xl shadow-2xl border-4 font-bold text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
-        <div className="text-xs opacity-90 mb-1">今月のトータル貯金額</div>
+      <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
+        <div className="text-[10px] md:text-xs opacity-90 mb-0.5 md:mb-1">今月のトータル貯金額</div>
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
 
-      {/* カテゴリ管理モーダル (ドラッグ＆ドロップ対応) */}
+      {/* カテゴリ管理モーダル (タップ並び替え) */}
       {isManageCatModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="bg-[#F0F8FF] p-6 rounded-xl w-[400px] shadow-2xl border-2 border-[#00BFFF]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-[#0000CD]">カテゴリの管理と並び替え</h3>
+              <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">カテゴリの管理と並び替え</h3>
               <button onClick={() => setIsManageCatModalOpen(false)} className="text-gray-500 hover:text-[#FF3356] font-bold text-2xl">&times;</button>
             </div>
             
-            <div className="mb-4 bg-white p-3 rounded border border-[#87CEFA]">
+            <div className="mb-4 bg-white p-3 rounded border border-[#87CEFA] shrink-0">
               <h4 className="text-sm font-bold text-[#0000CD] mb-2">新規作成</h4>
               <div className="flex flex-col gap-2">
-                <input type="text" placeholder="カテゴリ名" value={newCatName} onChange={e => setNewCatName(e.target.value)} className="border-2 border-[#87CEFA] p-1 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF]" />
+                <input type="text" placeholder="カテゴリ名" value={newCatName} onChange={e => setNewCatName(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF]" />
                 <div className="flex flex-wrap gap-2">
                   {CUSTOM_COLORS.map(c => <div key={c.code} onClick={() => setNewCatColor(c.code)} className={`w-6 h-6 rounded-full cursor-pointer border-2 ${newCatColor === c.code ? 'border-[#0000CD] scale-110' : 'border-transparent'}`} style={{backgroundColor: c.code}} title={c.name} />)}
                 </div>
-                <button type="button" onClick={addCategory} className="bg-[#00BFFF] text-white p-1.5 rounded text-sm font-bold shadow-md hover:bg-[#0000CD]">追加</button>
+                <button type="button" onClick={addCategory} className="bg-[#00BFFF] text-white p-2 rounded text-sm font-bold shadow-md hover:bg-[#0000CD]">追加</button>
               </div>
             </div>
 
-            <h4 className="text-sm font-bold text-[#0000CD] mb-2">並び替え (ドラッグで移動)</h4>
-            <ul className="space-y-2 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
-              {categories.filter(c => c.type === modalType).map((c, index) => (
+            <h4 className="text-sm font-bold text-[#0000CD] mb-2 shrink-0">並び替え (矢印タップで移動)</h4>
+            <ul className="space-y-2 overflow-y-auto pr-1 custom-scrollbar flex-1">
+              {categories.filter(c => c.type === modalType).map((c, index, arr) => (
                 <li 
                   key={c.id}
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData('catIndex', index.toString())}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDropCategory(e, index)}
-                  className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded cursor-move hover:shadow-md transition-shadow"
+                  className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-center gap-2">
-                    <div className="text-gray-400">≡</div>
+                    <div className="flex flex-col gap-1 mr-1">
+                      <button 
+                        onClick={() => moveCategory(index, 'up')}
+                        disabled={index === 0}
+                        className={`text-lg leading-none ${index === 0 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}
+                      >
+                        ▲
+                      </button>
+                      <button 
+                        onClick={() => moveCategory(index, 'down')}
+                        disabled={index === arr.length - 1}
+                        className={`text-lg leading-none ${index === arr.length - 1 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}
+                      >
+                        ▼
+                      </button>
+                    </div>
                     <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: c.color_code }} />
-                    <span className="font-bold text-[#0000CD]">{c.name}</span>
+                    <span className="font-bold text-[#0000CD] text-sm md:text-base">{c.name}</span>
                   </div>
                   <button onClick={() => deleteCategory(c.id)} className="text-[#FF3356] text-xs font-bold px-2 py-1 bg-[#FF3356]/10 rounded hover:bg-[#FF3356] hover:text-white transition-colors">削除</button>
                 </li>
@@ -505,14 +525,14 @@ function Dashboard({ userId }: { userId: string }) {
       )}
 
       {isModalOpen && selectedDates.length > 0 && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#F0F8FF] p-6 rounded-xl w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
+              <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-2xl">&times;</button>
             </div>
             {selectedDates.length === 1 && selectedDayTransactions.length > 0 && (
-              <div className="mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
+              <div className="mb-4 md:mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
                 <h4 className="font-bold text-sm mb-2 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
                 <div className="space-y-2">
                   {selectedDayTransactions.map(tx => (
@@ -522,7 +542,7 @@ function Dashboard({ userId }: { userId: string }) {
                         <span className="text-gray-700 font-semibold">{categories.find(c => c.id === tx.category_id)?.name}</span>
                         <span className="font-bold ml-2 text-black">{tx.amount.toLocaleString()}円</span>
                       </div>
-                      <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline">削除</button>
+                      <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline p-1">削除</button>
                     </div>
                   ))}
                 </div>
@@ -530,9 +550,9 @@ function Dashboard({ userId }: { userId: string }) {
             )}
             
             <div className="flex gap-1 mb-4 p-1 bg-[#87CEFA]/30 rounded-lg">
-              <button onClick={() => setModalType('schedule')} className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
-              <button onClick={() => setModalType('income')} className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
-              <button onClick={() => setModalType('expense')} className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
+              <button onClick={() => setModalType('schedule')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
+              <button onClick={() => setModalType('income')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
+              <button onClick={() => setModalType('expense')} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
             </div>
             
             <form onSubmit={addData} className="flex flex-col gap-4">
@@ -540,7 +560,7 @@ function Dashboard({ userId }: { userId: string }) {
                 <>
                   <div>
                     <label className="block text-sm font-bold mb-1 text-[#0000CD]">予定のタイトル</label>
-                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
+                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
                   </div>
                   <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
                     <input type="checkbox" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} id="allday" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
@@ -548,9 +568,9 @@ function Dashboard({ userId }: { userId: string }) {
                   </div>
                   {!isAllDay && (
                     <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
-                      <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                      <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
                       <span className="font-bold text-[#0000CD]">〜</span>
-                      <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                      <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
                     </div>
                   )}
                   {selectedDates.length === 1 && (
@@ -563,7 +583,7 @@ function Dashboard({ userId }: { userId: string }) {
                       {scheduleMode === 'weekly' && (
                         <div className="pl-3 border-l-4 border-[#00BFFF] bg-white p-2 rounded">
                           <label className="block text-xs font-bold mb-1 text-[#0000CD]">終了日</label>
-                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-1 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
+                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
                         </div>
                       )}
                     </div>
@@ -588,7 +608,6 @@ function Dashboard({ userId }: { userId: string }) {
                   <button type="button" onClick={() => setIsManageCatModalOpen(true)} className="text-xs text-[#00BFFF] font-bold hover:underline bg-white px-2 py-1 rounded border border-[#87CEFA] shadow-sm">管理・並び替え</button>
                 </div>
                 
-                {/* カスタムセレクトUI */}
                 <div className="relative">
                   <div 
                     onClick={() => setIsCatDropdownOpen(!isCatDropdownOpen)} 
@@ -596,11 +615,11 @@ function Dashboard({ userId }: { userId: string }) {
                   >
                     {categoryId ? (
                       <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
-                        <span className="font-bold text-[#0000CD] text-lg">{categories.find(c => c.id === categoryId)?.name}</span>
+                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-base md:text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
                       </div>
                     ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
-                    <span className="text-[#00BFFF] text-xs font-bold">▼</span>
+                    <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
                   </div>
                   
                   {isCatDropdownOpen && (
@@ -611,8 +630,8 @@ function Dashboard({ userId }: { userId: string }) {
                           onClick={() => { setCategoryId(c.id); setIsCatDropdownOpen(false); }}
                           className="flex items-center gap-3 p-3 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0"
                         >
-                          <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200" style={{ backgroundColor: c.color_code }} />
-                          <span className="font-bold text-[#0000CD]">{c.name}</span>
+                          <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
+                          <span className="font-bold text-[#0000CD] truncate">{c.name}</span>
                         </div>
                       ))}
                     </div>
@@ -620,9 +639,9 @@ function Dashboard({ userId }: { userId: string }) {
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-4">
+              <div className="flex gap-3 mt-2 md:mt-4">
                 <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md">閉じる</button>
-                <button type="submit" className="flex-1 bg-[#00BFFF] text-white p-3 rounded font-bold hover:bg-[#0000CD] transition-colors shadow-md text-lg">登録</button>
+                <button type="submit" className="flex-1 bg-[#00BFFF] text-white p-3 rounded font-bold hover:bg-[#0000CD] transition-colors shadow-md text-base md:text-lg">登録</button>
               </div>
             </form>
           </div>
@@ -630,19 +649,19 @@ function Dashboard({ userId }: { userId: string }) {
       )}
 
       {selectedSchedule && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#F0F8FF] p-6 rounded-xl w-80 shadow-2xl border-2 border-[#00BFFF]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F0F8FF] p-6 rounded-xl w-full max-w-80 shadow-2xl border-2 border-[#00BFFF]">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
-              <h3 className="text-xl font-extrabold text-[#0000CD]">{selectedSchedule.title}</h3>
+              <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
+              <h3 className="text-lg md:text-xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
             </div>
             <p className="text-sm mb-6 text-[#00BFFF] font-bold border-b-2 border-[#87CEFA] pb-2 inline-block">
               {selectedSchedule.is_all_day ? '終日' : `${selectedSchedule.start_time.substring(11, 16)} 〜 ${selectedSchedule.end_time.substring(11, 16)}`}
             </p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => deleteSchedule('single')} className="w-full bg-white text-[#FF3356] border-2 border-[#FF3356] p-2 rounded font-bold hover:bg-[#FF3356] hover:text-white transition-colors shadow-md">この予定のみ削除</button>
-              {selectedSchedule.recurring_id && <button onClick={() => deleteSchedule('future')} className="w-full bg-[#BA0200] text-white p-2 rounded font-bold hover:bg-black transition-colors shadow-md">これ以降の定期予定も削除</button>}
-              <button onClick={() => setSelectedSchedule(null)} className="w-full bg-white text-[#0000CD] border-2 border-[#87CEFA] p-2 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md mt-2">閉じる</button>
+              <button onClick={() => deleteSchedule('single')} className="w-full bg-white text-[#FF3356] border-2 border-[#FF3356] p-3 md:p-2 rounded font-bold hover:bg-[#FF3356] hover:text-white transition-colors shadow-md text-sm md:text-base">この予定のみ削除</button>
+              {selectedSchedule.recurring_id && <button onClick={() => deleteSchedule('future')} className="w-full bg-[#BA0200] text-white p-3 md:p-2 rounded font-bold hover:bg-black transition-colors shadow-md text-sm md:text-base">これ以降の定期予定も削除</button>}
+              <button onClick={() => setSelectedSchedule(null)} className="w-full bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 md:p-2 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md mt-2 text-sm md:text-base">閉じる</button>
             </div>
           </div>
         </div>
