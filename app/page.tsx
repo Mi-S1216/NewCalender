@@ -343,7 +343,7 @@ function Dashboard({ userId }: { userId: string }) {
         while (curr <= end) {
           const dStr = getLocalYYYYMMDD(curr)
           const startDateTime = isAllDay ? `${dStr}T00:00:00+09:00` : `${dStr}T${startTime}:00+09:00`
-          const endDateTime = isAllDay ? `${dStr}T23:59:59+09:00` : `${dStr}T${endTime}:00+09:00`
+          const endDateTime = isAllDay ? `${dStr}T23:55:00+09:00` : `${dStr}T${endTime}:00+09:00`
           scheduleInserts.push({ user_id: userId, category_id: categoryId, recurring_id: recurringId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay })
           curr.setDate(curr.getDate() + 7)
         }
@@ -352,7 +352,7 @@ function Dashboard({ userId }: { userId: string }) {
       } else {
         const scheduleInserts = selectedDates.map(dateStr => {
           const startDateTime = isAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${startTime}:00+09:00`
-          const endDateTime = isAllDay ? `${dateStr}T23:59:59+09:00` : `${dateStr}T${endTime}:00+09:00`
+          const endDateTime = isAllDay ? `${dateStr}T23:55:00+09:00` : `${dateStr}T${endTime}:00+09:00`
           return { user_id: userId, category_id: categoryId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay }
         })
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
@@ -407,7 +407,7 @@ function Dashboard({ userId }: { userId: string }) {
     if (!selectedSchedule || !editSchTitle.trim()) return
     const dateStr = selectedSchedule.start_time.substring(0, 10)
     const startDateTime = editSchIsAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${editSchStart}:00+09:00`
-    const endDateTime = editSchIsAllDay ? `${dateStr}T23:59:59+09:00` : `${dateStr}T${editSchEnd}:00+09:00`
+    const endDateTime = editSchIsAllDay ? `${dateStr}T23:55:00+09:00` : `${dateStr}T${editSchEnd}:00+09:00`
 
     const { error } = await supabase.from('schedules').update({
       title: editSchTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: editSchIsAllDay, category_id: editSchCatId
@@ -501,7 +501,6 @@ function Dashboard({ userId }: { userId: string }) {
                 const dayOfWeek = dateObj.getDay()
                 const isToday = dateString === todayString
                 
-                // 本日の日付は目立つ太枠に変更
                 let borderClass = 'border-[1px] md:border-2 border-[#87CEFA]'
                 if (isToday) borderClass = 'border-[3px] md:border-[4px] border-[#0000CD] shadow-[0_0_8px_rgba(0,0,205,0.6)] z-10 relative'
                 else if (HOLIDAYS.includes(dateString)) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
