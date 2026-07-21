@@ -40,12 +40,10 @@ const getContrastTextColor = (hex: string) => {
   return brightColors.includes(hex.toUpperCase()) ? '#000000' : '#FFFFFF'
 }
 
-// UTCズレを防ぐためのローカル日付文字列生成器
 const getLocalYYYYMMDD = (d: Date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// DBからのISO時刻文字列をローカル時刻(HH:mm)にフォーマットする関数
 const formatLocalTime = (isoString: string) => {
   const d = new Date(isoString)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -116,6 +114,7 @@ function Dashboard({ userId }: { userId: string }) {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   
   const [currentDate, setCurrentDate] = useState<Date | null>(null)
+  const [todayString, setTodayString] = useState('')
 
   // ToDo
   const [todoTitle, setTodoTitle] = useState('')
@@ -132,7 +131,7 @@ function Dashboard({ userId }: { userId: string }) {
   const [modalType, setModalType] = useState<'schedule' | 'income' | 'expense'>('schedule')
   const [amountStr, setAmountStr] = useState<string>('')
   const [isRecurring, setIsRecurring] = useState(false)
-  const [editingTxId, setEditingTxId] = useState<string | null>(null) // 収支編集用
+  const [editingTxId, setEditingTxId] = useState<string | null>(null)
   
   const [scheduleTitle, setScheduleTitle] = useState('')
   const [startTime, setStartTime] = useState('09:00')
@@ -158,7 +157,10 @@ function Dashboard({ userId }: { userId: string }) {
   const [editSchCatId, setEditSchCatId] = useState('')
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false)
 
-  useEffect(() => { setCurrentDate(new Date()) }, [])
+  useEffect(() => { 
+    setCurrentDate(new Date())
+    setTodayString(getLocalYYYYMMDD(new Date()))
+  }, [])
 
   const fetchData = async () => {
     if (!currentDate) return
@@ -218,13 +220,15 @@ function Dashboard({ userId }: { userId: string }) {
     e.preventDefault()
     if (!todoTitle.trim()) return
     if (editingTodoId) {
-      await supabase.from('todos').update({
+      const { error } = await supabase.from('todos').update({
         title: todoTitle, due_date: todoDueDate || null, priority: todoPriority
       }).eq('id', editingTodoId)
+      if (error) { alert('更新エラー: ' + error.message); return; }
       setEditingTodoId(null)
     } else {
       const targetMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`
-      await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+      const { error } = await supabase.from('todos').insert([{ user_id: userId, title: todoTitle, target_month: targetMonth, due_date: todoDueDate || null, priority: todoPriority, is_completed: false }])
+      if (error) { alert('追加エラー: ' + error.message); return; }
     }
     setTodoTitle(''); setTodoDueDate(''); setTodoPriority(3); fetchData();
   }
@@ -242,11 +246,15 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const toggleTodo = async (id: string, status: boolean) => {
-    await supabase.from('todos').update({ is_completed: !status }).eq('id', id); fetchData();
+    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id); 
+    if (error) alert('状態更新エラー: ' + error.message)
+    else fetchData();
   }
 
   const deleteTodo = async (id: string) => {
-    await supabase.from('todos').delete().eq('id', id); fetchData();
+    const { error } = await supabase.from('todos').delete().eq('id', id); 
+    if (error) alert('削除エラー: ' + error.message)
+    else fetchData();
   }
 
   // =====================
@@ -255,12 +263,15 @@ function Dashboard({ userId }: { userId: string }) {
   const addCategory = async () => {
     if (!newCatName.trim()) return
     const currentMax = categories.filter(c => c.type === modalType).length
-    await supabase.from('categories').insert([{ user_id: userId, type: modalType, name: newCatName, color_code: newCatColor, sort_order: currentMax }])
+    const { error } = await supabase.from('categories').insert([{ user_id: userId, type: modalType, name: newCatName, color_code: newCatColor, sort_order: currentMax }])
+    if (error) { alert('カテゴリ追加エラー: ' + error.message); return; }
     setNewCatName(''); fetchData();
   }
 
   const deleteCategory = async (id: string) => {
-    await supabase.from('categories').delete().eq('id', id); fetchData();
+    const { error } = await supabase.from('categories').delete().eq('id', id); 
+    if (error) alert('カテゴリ削除エラー: ' + error.message)
+    else fetchData();
   }
 
   const moveCategory = async (currentIndex: number, direction: 'up' | 'down') => {
@@ -269,13 +280,17 @@ function Dashboard({ userId }: { userId: string }) {
     const newCats = [...currentTypeCats]
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
     const temp = newCats[currentIndex]; newCats[currentIndex] = newCats[targetIndex]; newCats[targetIndex] = temp;
+    
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
       return { ...c, sort_order: newMatch }
     })
     setCategories(updatedCategories)
-    for (let i = 0; i < newCats.length; i++) await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
+    
+    for (let i = 0; i < newCats.length; i++) {
+      await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
+    }
   }
 
   // =====================
@@ -303,7 +318,9 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteTransaction = async (id: string) => {
-    await supabase.from('finance_transactions').delete().eq('id', id); fetchData();
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id); 
+    if (error) alert('削除エラー: ' + error.message)
+    else fetchData();
   }
 
   const addData = async (e: React.FormEvent) => {
@@ -314,10 +331,11 @@ function Dashboard({ userId }: { userId: string }) {
       if (!scheduleTitle.trim()) return
       if (scheduleMode === 'weekly' && scheduleEndDate && selectedDates.length === 1) {
         const targetDate = selectedDates[0]
-        const { data: recData, error } = await supabase.from('recurring_schedules').insert([{
+        const { data: recData, error: recError } = await supabase.from('recurring_schedules').insert([{
           user_id: userId, start_date: targetDate, end_date: scheduleEndDate, day_of_week: new Date(targetDate).getDay()
         }]).select()
-        if (error) return alert('定期ルール作成エラー: ' + error.message)
+        if (recError) return alert('定期ルール作成エラー: ' + recError.message)
+        
         const recurringId = recData[0].id
         const scheduleInserts = []
         const curr = new Date(targetDate)
@@ -329,14 +347,16 @@ function Dashboard({ userId }: { userId: string }) {
           scheduleInserts.push({ user_id: userId, category_id: categoryId, recurring_id: recurringId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay })
           curr.setDate(curr.getDate() + 7)
         }
-        await supabase.from('schedules').insert(scheduleInserts)
+        const { error } = await supabase.from('schedules').insert(scheduleInserts)
+        if (error) return alert('予定の登録に失敗しました: ' + error.message)
       } else {
         const scheduleInserts = selectedDates.map(dateStr => {
           const startDateTime = isAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${startTime}:00+09:00`
           const endDateTime = isAllDay ? `${dateStr}T23:59:59+09:00` : `${dateStr}T${endTime}:00+09:00`
           return { user_id: userId, category_id: categoryId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay }
         })
-        await supabase.from('schedules').insert(scheduleInserts)
+        const { error } = await supabase.from('schedules').insert(scheduleInserts)
+        if (error) return alert('予定の登録に失敗しました: ' + error.message)
       }
       setScheduleTitle(''); setScheduleMode('single'); setScheduleEndDate('');
     } else {
@@ -344,21 +364,24 @@ function Dashboard({ userId }: { userId: string }) {
       if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力してください。')
 
       if (editingTxId) {
-        await supabase.from('finance_transactions').update({
+        const { error } = await supabase.from('finance_transactions').update({
           amount: numAmount, category_id: categoryId, type: modalType
         }).eq('id', editingTxId)
+        if (error) return alert('収支の更新に失敗しました: ' + error.message)
         setEditingTxId(null)
       } else {
         if (isRecurring) {
           const ruleInserts = selectedDates.map(dateStr => ({
             user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, day_of_month: parseInt(dateStr.split('-')[2], 10)
           }))
-          await supabase.from('finance_recurring_rules').insert(ruleInserts)
+          const { error: rError } = await supabase.from('finance_recurring_rules').insert(ruleInserts)
+          if (rError) alert('定期ルールの登録に失敗しました: ' + rError.message)
         }
         const txInserts = selectedDates.map(dateStr => ({
           user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
         }))
-        await supabase.from('finance_transactions').insert(txInserts)
+        const { error } = await supabase.from('finance_transactions').insert(txInserts)
+        if (error) return alert('収支の登録に失敗しました: ' + error.message)
       }
       setAmountStr('')
     }
@@ -386,17 +409,24 @@ function Dashboard({ userId }: { userId: string }) {
     const startDateTime = editSchIsAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${editSchStart}:00+09:00`
     const endDateTime = editSchIsAllDay ? `${dateStr}T23:59:59+09:00` : `${dateStr}T${editSchEnd}:00+09:00`
 
-    await supabase.from('schedules').update({
+    const { error } = await supabase.from('schedules').update({
       title: editSchTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: editSchIsAllDay, category_id: editSchCatId
     }).eq('id', selectedSchedule.id)
 
+    if (error) return alert('予定の更新に失敗しました: ' + error.message)
     setIsEditingSchedule(false); setSelectedSchedule(null); fetchData();
   }
 
   const deleteSchedule = async (type: 'single' | 'future') => {
     if (!selectedSchedule) return
-    if (type === 'single') await supabase.from('schedules').delete().eq('id', selectedSchedule.id)
-    else if (type === 'future' && selectedSchedule.recurring_id) await supabase.from('schedules').delete().eq('recurring_id', selectedSchedule.recurring_id).gte('start_time', selectedSchedule.start_time)
+    if (type === 'single') {
+      const { error } = await supabase.from('schedules').delete().eq('id', selectedSchedule.id)
+      if (error) alert('削除エラー: ' + error.message)
+    }
+    else if (type === 'future' && selectedSchedule.recurring_id) {
+      const { error } = await supabase.from('schedules').delete().eq('recurring_id', selectedSchedule.recurring_id).gte('start_time', selectedSchedule.start_time)
+      if (error) alert('削除エラー: ' + error.message)
+    }
     setSelectedSchedule(null); fetchData();
   }
 
@@ -469,9 +499,12 @@ function Dashboard({ userId }: { userId: string }) {
                 const isSelected = selectedDates.includes(dateString)
                 const dateObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
                 const dayOfWeek = dateObj.getDay()
+                const isToday = dateString === todayString
                 
+                // 本日の日付は目立つ太枠に変更
                 let borderClass = 'border-[1px] md:border-2 border-[#87CEFA]'
-                if (HOLIDAYS.includes(dateString)) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
+                if (isToday) borderClass = 'border-[3px] md:border-[4px] border-[#0000CD] shadow-[0_0_8px_rgba(0,0,205,0.6)] z-10 relative'
+                else if (HOLIDAYS.includes(dateString)) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
                 else if (dayOfWeek === 0) borderClass = 'border-[2px] md:border-4 border-[#FF3356] md:shadow-[0_0_10px_rgba(255,51,86,0.3)]'
                 else if (dayOfWeek === 6) borderClass = 'border-[2px] md:border-4 border-[#3DFFF3] md:shadow-[0_0_10px_rgba(61,255,243,0.3)]'
 
