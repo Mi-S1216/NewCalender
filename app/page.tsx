@@ -62,6 +62,29 @@ interface FinanceTransaction { id: string; type: 'income' | 'expense'; amount: n
 interface Category { id: string; type: string; name: string; color_code: string; sort_order: number; }
 interface Schedule { id: string; title: string; start_time: string; end_time: string; is_all_day: boolean; category_id: string; recurring_id: string | null; }
 
+// PC環境等でも必ず24時間表記で設定できるカスタム時間セレクトコンポーネント
+const TimeSelect = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => {
+  const h = value ? value.split(':')[0] : '00'
+  const m = value ? value.split(':')[1] : '00'
+  return (
+    <div className="flex items-center flex-1 bg-white border-2 border-[#87CEFA] rounded p-1 md:p-1.5 focus-within:border-[#00BFFF]">
+      <select value={h} onChange={e => onChange(`${e.target.value}:${m}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
+        {Array.from({length: 24}).map((_, i) => {
+          const hh = String(i).padStart(2, '0');
+          return <option key={hh} value={hh}>{hh}</option>
+        })}
+      </select>
+      <span className="font-bold text-[#0000CD] mb-[2px] mx-1">:</span>
+      <select value={m} onChange={e => onChange(`${h}:${e.target.value}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
+        {Array.from({length: 12}).map((_, i) => {
+          const mm = String(i * 5).padStart(2, '0');
+          return <option key={mm} value={mm}>{mm}</option>
+        })}
+      </select>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [email, setEmail] = useState('')
@@ -142,8 +165,8 @@ function Dashboard({ userId }: { userId: string }) {
   const [editingTxId, setEditingTxId] = useState<string | null>(null)
   
   const [scheduleTitle, setScheduleTitle] = useState('')
-  const [startTime, setStartTime] = useState('09:00')
-  const [endTime, setEndTime] = useState('10:00')
+  const [startTime, setStartTime] = useState('00:00')
+  const [endTime, setEndTime] = useState('00:00')
   const [isAllDay, setIsAllDay] = useState(false)
   const [scheduleMode, setScheduleMode] = useState<'single' | 'weekly'>('single')
   const [scheduleEndDate, setScheduleEndDate] = useState('') 
@@ -159,8 +182,8 @@ function Dashboard({ userId }: { userId: string }) {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
   const [isEditingSchedule, setIsEditingSchedule] = useState(false)
   const [editSchTitle, setEditSchTitle] = useState('')
-  const [editSchStart, setEditSchStart] = useState('')
-  const [editSchEnd, setEditSchEnd] = useState('')
+  const [editSchStart, setEditSchStart] = useState('00:00')
+  const [editSchEnd, setEditSchEnd] = useState('00:00')
   const [editSchIsAllDay, setEditSchIsAllDay] = useState(false)
   const [editSchCatId, setEditSchCatId] = useState('')
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false)
@@ -289,11 +312,12 @@ function Dashboard({ userId }: { userId: string }) {
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
     const temp = newCats[currentIndex]; newCats[currentIndex] = newCats[targetIndex]; newCats[targetIndex] = temp;
     
+    // sort_orderを更新した後、画面表示用に配列自体もソートする
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
       return { ...c, sort_order: newMatch }
-    })
+    }).sort((a, b) => a.sort_order - b.sort_order)
     setCategories(updatedCategories)
     
     for (let i = 0; i < newCats.length; i++) {
@@ -316,6 +340,7 @@ function Dashboard({ userId }: { userId: string }) {
     setIsModalOpen(false)
     if (!isMultiSelectMode) setSelectedDates([])
     setAmountStr(''); setScheduleTitle(''); setIsCatDropdownOpen(false); setEditingTxId(null);
+    setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false); // 入力内容をリセット
   }
 
   const startEditTransaction = (tx: FinanceTransaction) => {
@@ -366,7 +391,9 @@ function Dashboard({ userId }: { userId: string }) {
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
         if (error) return alert('予定の登録に失敗しました: ' + error.message)
       }
+      // 登録完了後にリセット
       setScheduleTitle(''); setScheduleMode('single'); setScheduleEndDate('');
+      setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false);
     } else {
       const numAmount = Number(amountStr)
       if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力してください。')
@@ -379,17 +406,41 @@ function Dashboard({ userId }: { userId: string }) {
         setEditingTxId(null)
       } else {
         if (isRecurring) {
-          const ruleInserts = selectedDates.map(dateStr => ({
-            user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, day_of_month: parseInt(dateStr.split('-')[2], 10)
+          // 向こう5年間（60ヶ月）分のトランザクションを一括生成する
+          const txInserts = []
+          for (const dateStr of selectedDates) {
+            const startDate = new Date(dateStr)
+            const startYear = startDate.getFullYear()
+            const startMonth = startDate.getMonth()
+            const baseDate = startDate.getDate()
+
+            for (let i = 0; i < 60; i++) {
+              const targetYear = startYear + Math.floor((startMonth + i) / 12)
+              const targetMonth = (startMonth + i) % 12
+              
+              // 選択した日付が翌月以降に存在しない場合（例: 31日が2月にない場合）は、その月の末日に自動調整
+              const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate()
+              const targetDate = Math.min(baseDate, lastDay)
+              const d = new Date(targetYear, targetMonth, targetDate)
+
+              txInserts.push({
+                user_id: userId,
+                category_id: categoryId,
+                type: modalType,
+                amount: numAmount,
+                transaction_date: getLocalYYYYMMDD(d)
+              })
+            }
+          }
+          const { error } = await supabase.from('finance_transactions').insert(txInserts)
+          if (error) return alert('固定費の登録に失敗しました: ' + error.message)
+        } else {
+          const txInserts = selectedDates.map(dateStr => ({
+            user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
           }))
-          const { error: rError } = await supabase.from('finance_recurring_rules').insert(ruleInserts)
-          if (rError) alert('定期ルールの登録に失敗しました: ' + rError.message)
+          const { error } = await supabase.from('finance_transactions').insert(txInserts)
+          if (error) return alert('収支の登録に失敗しました: ' + error.message)
         }
-        const txInserts = selectedDates.map(dateStr => ({
-          user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
-        }))
-        const { error } = await supabase.from('finance_transactions').insert(txInserts)
-        if (error) return alert('収支の登録に失敗しました: ' + error.message)
       }
       setAmountStr('')
     }
@@ -685,9 +736,9 @@ function Dashboard({ userId }: { userId: string }) {
                   </div>
                   {!isAllDay && (
                     <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
-                      <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
+                      <TimeSelect value={startTime} onChange={setStartTime} />
                       <span className="font-bold text-[#0000CD]">〜</span>
-                      <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
+                      <TimeSelect value={endTime} onChange={setEndTime} />
                     </div>
                   )}
                   {selectedDates.length === 1 && (
@@ -786,9 +837,9 @@ function Dashboard({ userId }: { userId: string }) {
                 </div>
                 {!editSchIsAllDay && (
                   <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
-                    <input type="time" value={editSchStart} onChange={e => setEditSchStart(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                    <TimeSelect value={editSchStart} onChange={setEditSchStart} />
                     <span className="font-bold text-[#0000CD]">〜</span>
-                    <input type="time" value={editSchEnd} onChange={e => setEditSchEnd(e.target.value)} step="300" required className="border-2 border-[#87CEFA] p-2 rounded flex-1 focus:outline-none focus:border-[#00BFFF] font-bold" />
+                    <TimeSelect value={editSchEnd} onChange={setEditSchEnd} />
                   </div>
                 )}
                 <div className="relative">
