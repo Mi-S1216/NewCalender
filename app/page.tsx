@@ -58,6 +58,7 @@ const formatLocalTime = (isoString: string) => {
 }
 
 interface Todo { id: string; title: string; due_date: string | null; priority: number; is_completed: boolean; }
+interface WishItem { id: string; title: string; target_price: number | null; priority: number; is_completed: boolean; }
 interface FinanceTransaction { id: string; type: 'income' | 'expense'; amount: number; transaction_date: string; category_id: string; }
 interface Category { id: string; type: string; name: string; color_code: string; sort_order: number; }
 interface Schedule { id: string; title: string; start_time: string; end_time: string; is_all_day: boolean; category_id: string; recurring_id: string | null; }
@@ -69,14 +70,14 @@ const TimeSelect = ({ value, onChange }: { value: string, onChange: (v: string) 
     <div className="flex items-center flex-1 bg-white border-2 border-[#87CEFA] rounded p-1 md:p-1.5 focus-within:border-[#00BFFF]">
       <select value={h} onChange={e => onChange(`${e.target.value}:${m}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
         {Array.from({length: 24}).map((_, i) => {
-          const hh = String(i).padStart(2, '0')
+          const hh = String(i).padStart(2, '0');
           return <option key={hh} value={hh}>{hh}</option>
         })}
       </select>
       <span className="font-bold text-[#0000CD] mb-[2px] mx-1">:</span>
       <select value={m} onChange={e => onChange(`${h}:${e.target.value}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
         {Array.from({length: 12}).map((_, i) => {
-          const mm = String(i * 5).padStart(2, '0')
+          const mm = String(i * 5).padStart(2, '0');
           return <option key={mm} value={mm}>{mm}</option>
         })}
       </select>
@@ -90,17 +91,13 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [isLoginMode, setIsLoginMode] = useState(true)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
-  const [showAuthSuccessBanner, setShowAuthSuccessBanner] = useState(false)
+  const [authMessage, setAuthMessage] = useState('')
 
   useEffect(() => {
-    // メール認証リンク等（URLハッシュにaccess_tokenまたはtype=signupが含まれる場合）を検知
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash
-      const search = window.location.search
-      if (hash.includes('access_token=') || hash.includes('type=recovery') || hash.includes('type=signup') || search.includes('type=signup')) {
-        setShowAuthSuccessBanner(true)
-        window.history.replaceState({}, document.title, window.location.pathname)
-      }
+    if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+      setAuthMessage('✅ メール認証が完了しました。ログインしています...')
+      window.history.replaceState(null, '', window.location.pathname)
+      setTimeout(() => setAuthMessage(''), 5000)
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); })
@@ -110,13 +107,14 @@ export default function App() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+    setAuthMessage('')
     if (isLoginMode) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) alert('ログイン失敗: ' + error.message)
     } else {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) alert('登録失敗: ' + error.message)
-      else alert('確認メールを送信した。メール内のリンクから認証を完了させよ。')
+      else setAuthMessage('✉️ 確認メールを送信しました。メール内のリンクをクリックして認証を完了してください。')
     }
   }
 
@@ -124,7 +122,12 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#87CEFA]/30 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-[#87CEFA]/30 p-4 relative">
+        {authMessage && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white text-[#0000CD] border-2 border-[#0000CD] px-6 py-3 rounded-lg shadow-2xl font-bold z-50 text-sm md:text-base w-11/12 max-w-lg text-center">
+            {authMessage}
+          </div>
+        )}
         <form onSubmit={handleAuth} className="bg-[#F0F8FF] p-8 rounded-xl shadow-xl w-full max-w-sm flex flex-col gap-5 text-[#0000CD] border-2 border-[#00BFFF]">
           <h2 className="text-2xl font-bold text-center border-b-2 border-[#00BFFF] pb-2">{isLoginMode ? 'ログイン' : '新規登録'}</h2>
           <div>
@@ -146,21 +149,12 @@ export default function App() {
     )
   }
 
-  return (
-    <>
-      {showAuthSuccessBanner && (
-        <div className="bg-[#00FF79] text-[#0000CD] font-bold p-3 text-center flex justify-between items-center shadow-md border-b-2 border-[#0000CD]">
-          <span className="flex-1">メール認証が完了した。ログイン済みである。</span>
-          <button onClick={() => setShowAuthSuccessBanner(false)} className="px-2 font-extrabold text-lg">&times;</button>
-        </div>
-      )}
-      <Dashboard userId={session.user.id} />
-    </>
-  )
+  return <Dashboard userId={session.user.id} />
 }
 
 function Dashboard({ userId }: { userId: string }) {
   const [todos, setTodos] = useState<Todo[]>([])
+  const [wishes, setWishes] = useState<WishItem[]>([])
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -172,6 +166,11 @@ function Dashboard({ userId }: { userId: string }) {
   const [todoPriority, setTodoPriority] = useState<number>(3)
   const [todoDueDate, setTodoDueDate] = useState('')
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+
+  const [wishTitle, setWishTitle] = useState('')
+  const [wishPrice, setWishPrice] = useState('')
+  const [wishPriority, setWishPriority] = useState<number>(3)
+  const [activeTab, setActiveTab] = useState<'todo' | 'wish'>('todo')
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
   const [selectedDates, setSelectedDates] = useState<string[]>([])
@@ -203,6 +202,11 @@ function Dashboard({ userId }: { userId: string }) {
   const [editSchIsAllDay, setEditSchIsAllDay] = useState(false)
   const [editSchCatId, setEditSchCatId] = useState('')
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false)
+
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false)
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false)
+  const [contactSubject, setContactSubject] = useState('')
+  const [contactBody, setContactBody] = useState('')
 
   useEffect(() => { 
     setCurrentDate(new Date())
@@ -239,13 +243,15 @@ function Dashboard({ userId }: { userId: string }) {
       catData = retryCat.data
     }
 
-    const [tRes, fRes, sRes] = await Promise.all([
+    const [tRes, wRes, fRes, sRes] = await Promise.all([
       supabase.from('todos').select('*').order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('wishlists').select('*').order('priority', { ascending: false }),
       supabase.from('finance_transactions').select('*').gte('transaction_date', startOfMonth).lte('transaction_date', endOfMonth),
       supabase.from('schedules').select('*').gte('start_time', `${startOfMonth}T00:00:00+09:00`).lte('start_time', `${endOfMonth}T23:59:59+09:00`)
     ])
 
     if (tRes.data) setTodos(tRes.data)
+    if (wRes.data) setWishes(wRes.data)
     if (fRes.data) setTransactions(fRes.data)
     if (catData) setCategories(catData)
     if (sRes.data) setSchedules(sRes.data)
@@ -290,15 +296,57 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const toggleTodo = async (id: string, status: boolean) => {
-    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id)
+    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id); 
     if (error) alert('状態更新エラー: ' + error.message)
-    else fetchData()
+    else fetchData();
   }
 
   const deleteTodo = async (id: string) => {
-    const { error } = await supabase.from('todos').delete().eq('id', id)
+    const { error } = await supabase.from('todos').delete().eq('id', id); 
     if (error) alert('削除エラー: ' + error.message)
-    else fetchData()
+    else fetchData();
+  }
+
+  const addWish = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!wishTitle.trim()) return
+    const price = wishPrice ? Number(wishPrice) : null
+    const { error } = await supabase.from('wishlists').insert([{ user_id: userId, title: wishTitle, target_price: price, priority: wishPriority, is_completed: false }])
+    if (error) { alert('追加エラー: ' + error.message); return; }
+    setWishTitle(''); setWishPrice(''); setWishPriority(3); fetchData();
+  }
+
+  const toggleWish = async (id: string, status: boolean) => {
+    await supabase.from('wishlists').update({ is_completed: !status }).eq('id', id); fetchData();
+  }
+
+  const deleteWish = async (id: string) => {
+    await supabase.from('wishlists').delete().eq('id', id); fetchData();
+  }
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!contactSubject.trim() || !contactBody.trim()) return
+    const { error } = await supabase.from('contacts').insert([{ user_id: userId, subject: contactSubject, body: contactBody }])
+    if (error) alert('送信失敗: ' + error.message)
+    else {
+      alert('送信が完了しました。')
+      setContactSubject(''); setContactBody(''); setIsContactModalOpen(false);
+    }
+  }
+
+  const generateAiAdvice = () => {
+    const highPriorityTodos = todos.filter(t => !t.is_completed && t.priority >= 4).length
+    const totalSchedules = schedules.length
+    const monthlyIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
+    const monthlyExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+    const balance = monthlyIncome - monthlyExpense
+
+    let scheduleAdvice = totalSchedules > 20 ? '予定が密になっています。優先度の低い予定の入れ替えを検討してください。' : 'スケジュールには余裕があります。'
+    let todoAdvice = highPriorityTodos > 0 ? `優先度4以上のタスクが ${highPriorityTodos} 件残っています。直近の隙間時間を割り当ててください。` : '最優先タスクは消化されています。'
+    let financeAdvice = balance < 0 ? '今月は支出が収入を上回っています。固定費やウィッシュリストの購入を見直してください。' : '収支は黒字を維持しています。'
+
+    return { scheduleAdvice, todoAdvice, financeAdvice }
   }
 
   const addCategory = async () => {
@@ -310,9 +358,9 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteCategory = async (id: string) => {
-    const { error } = await supabase.from('categories').delete().eq('id', id)
+    const { error } = await supabase.from('categories').delete().eq('id', id); 
     if (error) alert('カテゴリ削除エラー: ' + error.message)
-    else fetchData()
+    else fetchData();
   }
 
   const moveCategory = async (currentIndex: number, direction: 'up' | 'down') => {
@@ -357,14 +405,14 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteTransaction = async (id: string) => {
-    const { error } = await supabase.from('finance_transactions').delete().eq('id', id)
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id); 
     if (error) alert('削除エラー: ' + error.message)
-    else fetchData()
+    else fetchData();
   }
 
   const addData = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedDates.length === 0 || !categoryId) return alert('日付またはカテゴリが選択されていない。')
+    if (selectedDates.length === 0 || !categoryId) return alert('日付またはカテゴリが選択されていません。')
 
     if (modalType === 'schedule') {
       if (!scheduleTitle.trim()) return
@@ -387,7 +435,7 @@ function Dashboard({ userId }: { userId: string }) {
           curr.setDate(curr.getDate() + 7)
         }
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
-        if (error) return alert('予定の登録に失敗した: ' + error.message)
+        if (error) return alert('予定の登録に失敗しました: ' + error.message)
       } else {
         const scheduleInserts = selectedDates.map(dateStr => {
           const startDateTime = isAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${startTime}:00+09:00`
@@ -395,19 +443,19 @@ function Dashboard({ userId }: { userId: string }) {
           return { user_id: userId, category_id: categoryId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay }
         })
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
-        if (error) return alert('予定の登録に失敗した: ' + error.message)
+        if (error) return alert('予定の登録に失敗しました: ' + error.message)
       }
       setScheduleTitle(''); setScheduleMode('single'); setScheduleEndDate('');
       setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false);
     } else {
       const numAmount = Number(amountStr)
-      if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力せよ。')
+      if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力してください。')
 
       if (editingTxId) {
         const { error } = await supabase.from('finance_transactions').update({
           amount: numAmount, category_id: categoryId, type: modalType
         }).eq('id', editingTxId)
-        if (error) return alert('収支の更新に失敗した: ' + error.message)
+        if (error) return alert('収支の更新に失敗しました: ' + error.message)
         setEditingTxId(null)
       } else {
         if (isRecurring) {
@@ -435,13 +483,13 @@ function Dashboard({ userId }: { userId: string }) {
             }
           }
           const { error } = await supabase.from('finance_transactions').insert(txInserts)
-          if (error) return alert('固定費の登録に失敗した: ' + error.message)
+          if (error) return alert('固定費の登録に失敗しました: ' + error.message)
         } else {
           const txInserts = selectedDates.map(dateStr => ({
             user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
           }))
           const { error } = await supabase.from('finance_transactions').insert(txInserts)
-          if (error) return alert('収支の登録に失敗した: ' + error.message)
+          if (error) return alert('収支の登録に失敗しました: ' + error.message)
         }
       }
       setAmountStr('')
@@ -471,7 +519,7 @@ function Dashboard({ userId }: { userId: string }) {
       title: editSchTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: editSchIsAllDay, category_id: editSchCatId
     }).eq('id', selectedSchedule.id)
 
-    if (error) return alert('予定の更新に失敗した: ' + error.message)
+    if (error) return alert('予定の更新に失敗しました: ' + error.message)
     setIsEditingSchedule(false); setSelectedSchedule(null); fetchData();
   }
 
@@ -524,13 +572,19 @@ function Dashboard({ userId }: { userId: string }) {
                 {selectedDates.length}日分を登録
               </button>
             )}
+            <button onClick={() => setIsAiModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-[#7100FF] text-white rounded font-bold text-xs md:text-sm shadow-md hover:opacity-90">
+              AIマネジメント ✨
+            </button>
+            <button onClick={() => setIsContactModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#0000CD] border-2 border-[#0000CD] rounded font-bold text-xs md:text-sm hover:bg-[#87CEFA]/20">
+              問い合わせ
+            </button>
             <button onClick={() => supabase.auth.signOut()} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#BA0200] border-2 border-[#BA0200] rounded font-bold text-xs md:text-sm hover:bg-[#BA0200] hover:text-white transition-colors whitespace-nowrap shadow-md">
               ログアウト
             </button>
           </div>
         </div>
-
-        <div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
+        {/* -- 500行目到達箇所：カレンダーグリッドの描画処理がこの後続く -- */}
+<div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
           <div className="w-[105%] -ml-[2.5%]">
             <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[2.45cqi] md:text-[11px]">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
@@ -595,48 +649,88 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       </section>
 
+      {/* -------------------- 右サイドバー (ToDo / Wishlist 切り替え) -------------------- */}
       <section className="w-full xl:w-[400px] bg-[#F0F8FF] p-4 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
-        <h2 className="text-lg md:text-xl font-bold mb-4 border-b-2 border-[#00BFFF] pb-2">ToDoリスト</h2>
-        <form onSubmit={submitTodo} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded border border-[#87CEFA]">
-          <input type="text" value={todoTitle} onChange={e => setTodoTitle(e.target.value)} placeholder="タスク名" required className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
-          <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
-          <select value={todoPriority} onChange={e => setTodoPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none font-bold text-sm md:text-base">
-            {[5,4,3,2,1].map(p => <option key={p} value={p}>優先度 {p}</option>)}
-          </select>
-          <div className="flex gap-2">
-            {editingTodoId && <button type="button" onClick={cancelEditTodo} className="flex-1 bg-gray-200 text-gray-700 p-2 rounded font-bold hover:bg-gray-300 transition-colors">キャンセル</button>}
-            <button type="submit" className={`flex-1 text-white p-2 rounded font-bold shadow-md transition-colors ${editingTodoId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
-              {editingTodoId ? '更新' : '追加'}
-            </button>
-          </div>
-        </form>
-        <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          {todos.map(todo => (
-            <li key={todo.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
-              <div className="flex items-start gap-2 md:gap-3 flex-1">
-                <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
-                <div className="flex flex-col flex-1">
-                  <span className={`font-bold text-sm md:text-base break-words ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
-                  <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
-                    {todo.due_date && <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">期日: {todo.due_date.replace(/-/g, '/')}</span>}
+        <div className="flex gap-2 mb-4 border-b-2 border-[#00BFFF] pb-2">
+          <button onClick={() => setActiveTab('todo')} className={`flex-1 py-1 font-bold rounded ${activeTab === 'todo' ? 'bg-[#00BFFF] text-white' : 'bg-white text-[#0000CD]'}`}>
+            ToDoリスト
+          </button>
+          <button onClick={() => setActiveTab('wish')} className={`flex-1 py-1 font-bold rounded ${activeTab === 'wish' ? 'bg-[#00BFFF] text-white' : 'bg-white text-[#0000CD]'}`}>
+            ウィッシュリスト
+          </button>
+        </div>
+
+        {activeTab === 'todo' ? (
+          <div className="flex flex-col flex-1">
+            <form onSubmit={submitTodo} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded border border-[#87CEFA]">
+              <input type="text" value={todoTitle} onChange={e => setTodoTitle(e.target.value)} placeholder="タスク名" required className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
+              <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none text-sm md:text-base" />
+              <select value={todoPriority} onChange={e => setTodoPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded focus:border-[#00BFFF] focus:outline-none font-bold text-sm md:text-base">
+                {[5,4,3,2,1].map(p => <option key={p} value={p}>優先度 {p}</option>)}
+              </select>
+              <div className="flex gap-2">
+                {editingTodoId && <button type="button" onClick={cancelEditTodo} className="flex-1 bg-gray-200 text-gray-700 p-2 rounded font-bold hover:bg-gray-300 transition-colors">キャンセル</button>}
+                <button type="submit" className={`flex-1 text-white p-2 rounded font-bold shadow-md transition-colors ${editingTodoId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
+                  {editingTodoId ? '更新' : '追加'}
+                </button>
+              </div>
+            </form>
+            <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {todos.map(todo => (
+                <li key={todo.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
+                  <div className="flex items-start gap-2 md:gap-3 flex-1">
+                    <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
+                    <div className="flex flex-col flex-1">
+                      <span className={`font-bold text-sm md:text-base break-words ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
+                      <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
+                        {todo.due_date && <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">期日: {todo.due_date.replace(/-/g, '/')}</span>}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1 shrink-0 ml-2">
-                <button onClick={() => editTodo(todo)} className="text-[#00BFFF] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">編集</button>
-                <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">削除</button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                  <div className="flex flex-col gap-1 shrink-0 ml-2">
+                    <button onClick={() => editTodo(todo)} className="text-[#00BFFF] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">編集</button>
+                    <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">削除</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="flex flex-col flex-1">
+            <form onSubmit={addWish} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded border border-[#87CEFA]">
+              <input type="text" value={wishTitle} onChange={e => setWishTitle(e.target.value)} placeholder="欲しいもの・やりたいこと" required className="border-2 border-[#87CEFA] p-2 rounded text-sm md:text-base focus:outline-none focus:border-[#00BFFF]" />
+              <input type="number" value={wishPrice} onChange={e => setWishPrice(e.target.value)} placeholder="目標金額(円)" className="border-2 border-[#87CEFA] p-2 rounded text-sm md:text-base focus:outline-none focus:border-[#00BFFF]" />
+              <select value={wishPriority} onChange={e => setWishPriority(Number(e.target.value))} className="border-2 border-[#87CEFA] p-2 rounded font-bold text-sm md:text-base">
+                {[5,4,3,2,1].map(p => <option key={p} value={p}>優先度 {p}</option>)}
+              </select>
+              <button type="submit" className="bg-[#00BFFF] text-white p-2 rounded font-bold hover:bg-[#0000CD]">追加</button>
+            </form>
+            <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {wishes.map(wish => (
+                <li key={wish.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded bg-white shadow-sm" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[wish.priority]}` }}>
+                  <div className="flex items-start gap-2 md:gap-3 flex-1">
+                    <input type="checkbox" checked={wish.is_completed} onChange={() => toggleWish(wish.id, wish.is_completed)} className="w-4 h-4 mt-1 accent-[#00BFFF]" />
+                    <div className="flex flex-col">
+                      <span className={`font-bold text-sm md:text-base ${wish.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{wish.title}</span>
+                      <span className="text-xs text-gray-500 font-bold">{wish.target_price ? `目標: ${wish.target_price.toLocaleString()}円` : '金額設定なし'} / 優先度: {wish.priority}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => deleteWish(wish.id)} className="text-[#FF3356] text-xs font-bold hover:underline ml-2">削除</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
+      {/* -------------------- 貯金額表示 -------------------- */}
       <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
         <div className="text-[10px] md:text-xs opacity-90 mb-0.5 md:mb-1">今月のトータル貯金額</div>
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
 
+      {/* -------------------- カテゴリ管理モーダル -------------------- */}
       {isManageCatModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] flex flex-col">
@@ -676,29 +770,30 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* 登録・一括操作モーダル（サイズを max-w-[560px] へ拡大） */}
+      {/* -------------------- 登録・一括操作モーダル (サイズ拡大: max-w-[560px]) -------------------- */}
       {isModalOpen && selectedDates.length > 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl md:text-2xl font-extrabold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl md:text-2xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-3xl">&times;</button>
             </div>
             
+            {/* この日の収支記録 */}
             {selectedDates.length === 1 && selectedDayTransactions.length > 0 && (
-              <div className="mb-6 bg-white p-4 rounded border-2 border-[#87CEFA] shadow-inner">
-                <h4 className="font-bold text-base mb-3 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
+              <div className="mb-4 md:mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
+                <h4 className="font-bold text-sm mb-2 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
                 <div className="space-y-2">
                   {selectedDayTransactions.map(tx => (
-                    <div key={tx.id} className="flex justify-between items-center text-sm md:text-base border-b border-gray-100 pb-1">
+                    <div key={tx.id} className="flex justify-between items-center text-sm border-b border-gray-100 pb-1">
                       <div className="flex-1">
                         <span className={`font-bold mr-2 ${tx.type === 'income' ? 'text-[#0000CD]' : 'text-[#FF3356]'}`}>{tx.type === 'income' ? '収入' : '支出'}</span>
                         <span className="text-gray-700 font-semibold">{categories.find(c => c.id === tx.category_id)?.name}</span>
-                        <span className="font-bold ml-3 text-black">{tx.amount.toLocaleString()}円</span>
+                        <span className="font-bold ml-2 text-black">{tx.amount.toLocaleString()}円</span>
                       </div>
-                      <div className="flex gap-3">
-                        <button type="button" onClick={() => startEditTransaction(tx)} className="text-[#00BFFF] text-sm font-bold hover:underline p-1">編集</button>
-                        <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-sm font-bold hover:underline p-1">削除</button>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => startEditTransaction(tx)} className="text-[#00BFFF] text-xs font-bold hover:underline p-1">編集</button>
+                        <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline p-1">削除</button>
                       </div>
                     </div>
                   ))}
@@ -706,41 +801,43 @@ function Dashboard({ userId }: { userId: string }) {
               </div>
             )}
             
-            <div className="flex gap-2 mb-6 p-1.5 bg-[#87CEFA]/30 rounded-lg">
-              <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
-              <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
-              <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
+            {/* モーダルタブ */}
+            <div className="flex gap-1 mb-4 p-1 bg-[#87CEFA]/30 rounded-lg">
+              <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
+              <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
+              <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
             </div>
             
-            <form onSubmit={addData} className="flex flex-col gap-5">
+            {/* メインフォーム */}
+            <form onSubmit={addData} className="flex flex-col gap-4">
               {modalType === 'schedule' ? (
                 <>
                   <div>
-                    <label className="block text-sm md:text-base font-bold mb-1.5 text-[#0000CD]">予定のタイトル</label>
-                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-3 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
+                    <label className="block text-sm font-bold mb-1 text-[#0000CD]">予定のタイトル</label>
+                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
                   </div>
-                  <div className="flex items-center gap-2 bg-white p-3 rounded border border-[#87CEFA]">
+                  <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
                     <input type="checkbox" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} id="allday" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
-                    <label htmlFor="allday" className="text-base cursor-pointer font-bold text-[#0000CD]">終日</label>
+                    <label htmlFor="allday" className="text-sm cursor-pointer font-bold text-[#0000CD]">終日</label>
                   </div>
                   {!isAllDay && (
-                    <div className="flex gap-3 items-center bg-white p-3 rounded border border-[#87CEFA]">
+                    <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
                       <TimeSelect value={startTime} onChange={setStartTime} />
                       <span className="font-bold text-[#0000CD]">〜</span>
                       <TimeSelect value={endTime} onChange={setEndTime} />
                     </div>
                   )}
                   {selectedDates.length === 1 && (
-                    <div className="border-t-2 border-[#87CEFA] pt-4 mt-1">
-                      <label className="block text-base font-bold mb-2 text-[#0000CD]">登録設定</label>
-                      <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as 'single'|'weekly')} className="border-2 border-[#87CEFA] p-2.5 rounded w-full mb-3 text-base font-bold focus:outline-none focus:border-[#00BFFF]">
+                    <div className="border-t-2 border-[#87CEFA] pt-3 mt-1">
+                      <label className="block text-sm font-bold mb-2 text-[#0000CD]">登録設定</label>
+                      <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as 'single'|'weekly')} className="border-2 border-[#87CEFA] p-2 rounded w-full mb-2 text-sm font-bold focus:outline-none focus:border-[#00BFFF]">
                         <option value="single">この日のみ</option>
                         <option value="weekly">毎週（繰り返し設定）</option>
                       </select>
                       {scheduleMode === 'weekly' && (
-                        <div className="pl-3 border-l-4 border-[#00BFFF] bg-white p-3 rounded">
-                          <label className="block text-sm font-bold mb-1 text-[#0000CD]">終了日</label>
-                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-2.5 rounded text-base w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
+                        <div className="pl-3 border-l-4 border-[#00BFFF] bg-white p-2 rounded">
+                          <label className="block text-xs font-bold mb-1 text-[#0000CD]">終了日</label>
+                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
                         </div>
                       )}
                     </div>
@@ -749,22 +846,22 @@ function Dashboard({ userId }: { userId: string }) {
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm md:text-base font-bold mb-1.5 text-[#0000CD]">金額 (円)</label>
-                    <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-3 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-xl" />
+                    <label className="block text-sm font-bold mb-1 text-[#0000CD]">金額 (円)</label>
+                    <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
                   </div>
                   {!editingTxId && (
-                    <div className="flex items-center gap-2 bg-white p-3 rounded border border-[#87CEFA]">
+                    <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
                       <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} id="recurring" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
-                      <label htmlFor="recurring" className="text-sm md:text-base cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
+                      <label htmlFor="recurring" className="text-xs cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
                     </div>
                   )}
                 </>
               )}
               
               <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="block text-sm md:text-base font-bold text-[#0000CD]">カテゴリ</label>
-                  <button type="button" onClick={() => setIsManageCatModalOpen(true)} className="text-sm text-[#00BFFF] font-bold hover:underline bg-white px-2 py-1 rounded border border-[#87CEFA] shadow-sm">管理・並び替え</button>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-bold text-[#0000CD]">カテゴリ</label>
+                  <button type="button" onClick={() => setIsManageCatModalOpen(true)} className="text-xs text-[#00BFFF] font-bold hover:underline bg-white px-2 py-1 rounded border border-[#87CEFA] shadow-sm">管理・並び替え</button>
                 </div>
                 
                 <div className="relative">
@@ -774,23 +871,23 @@ function Dashboard({ userId }: { userId: string }) {
                   >
                     {categoryId ? (
                       <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
-                        <span className="font-bold text-[#0000CD] text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
+                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-base md:text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
                       </div>
                     ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
-                    <span className="text-[#00BFFF] text-sm font-bold ml-2">▼</span>
+                    <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
                   </div>
                   
                   {isCatDropdownOpen && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-[#00BFFF] rounded shadow-xl max-h-56 overflow-y-auto custom-scrollbar">
+                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-[#00BFFF] rounded shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
                       {categories.filter(c => c.type === modalType).map(c => (
                         <div 
                           key={c.id} 
                           onClick={() => { setCategoryId(c.id); setIsCatDropdownOpen(false); }}
-                          className="flex items-center gap-3 p-3.5 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0"
+                          className="flex items-center gap-3 p-3 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0"
                         >
-                          <div className="w-6 h-6 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
-                          <span className="font-bold text-[#0000CD] text-base truncate">{c.name}</span>
+                          <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
+                          <span className="font-bold text-[#0000CD] truncate">{c.name}</span>
                         </div>
                       ))}
                     </div>
@@ -798,9 +895,9 @@ function Dashboard({ userId }: { userId: string }) {
                 </div>
               </div>
 
-              <div className="flex gap-4 mt-3">
-                <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3.5 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md text-base">閉じる</button>
-                <button type="submit" className={`flex-1 text-white p-3.5 rounded font-bold shadow-md text-lg transition-colors ${editingTxId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
+              <div className="flex gap-3 mt-2 md:mt-4">
+                <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md">閉じる</button>
+                <button type="submit" className={`flex-1 text-white p-3 rounded font-bold shadow-md text-base md:text-lg transition-colors ${editingTxId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
                   {editingTxId ? '更新' : '登録'}
                 </button>
               </div>
@@ -809,12 +906,13 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
+      {/* -------------------- 予定の詳細・編集モーダル (サイズ拡大: max-w-[560px]) -------------------- */}
       {selectedSchedule && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-6 rounded-xl w-full max-w-80 shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto">
             {isEditingSchedule ? (
               <form onSubmit={saveEditSchedule} className="flex flex-col gap-4">
-                <h3 className="text-lg md:text-xl font-bold text-[#0000CD] border-b-2 border-[#00BFFF] pb-2">予定の編集</h3>
+                <h3 className="text-xl md:text-2xl font-bold text-[#0000CD] border-b-2 border-[#00BFFF] pb-2">予定の編集</h3>
                 <div>
                   <label className="block text-sm font-bold mb-1 text-[#0000CD]">タイトル</label>
                   <input type="text" value={editSchTitle} onChange={e => setEditSchTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
@@ -862,7 +960,7 @@ function Dashboard({ userId }: { userId: string }) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
                     <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
-                    <h3 className="text-lg md:text-xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
+                    <h3 className="text-xl md:text-2xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
                   </div>
                   <button onClick={startEditSchedule} className="text-[#00BFFF] font-bold text-sm hover:underline shrink-0">編集</button>
                 </div>
@@ -876,6 +974,59 @@ function Dashboard({ userId }: { userId: string }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* -------------------- AIマネジメントモーダル -------------------- */}
+      {isAiModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#7100FF]">
+            <div className="flex justify-between items-center mb-4 border-b-2 border-[#7100FF] pb-2">
+              <h3 className="text-xl font-extrabold text-[#7100FF]">AIスケジュール＆タスク診断</h3>
+              <button onClick={() => setIsAiModalOpen(false)} className="text-gray-500 hover:text-black font-bold text-3xl">&times;</button>
+            </div>
+            <div className="space-y-4 text-sm md:text-base">
+              <div className="bg-white p-4 rounded border-l-4 border-[#FF3356] shadow-sm">
+                <div className="font-bold text-[#FF3356] mb-1">【予定・時間管理】</div>
+                <p className="text-gray-800">{generateAiAdvice().scheduleAdvice}</p>
+              </div>
+              <div className="bg-white p-4 rounded border-l-4 border-[#00BFFF] shadow-sm">
+                <div className="font-bold text-[#00BFFF] mb-1">【タスク優先度分析】</div>
+                <p className="text-gray-800">{generateAiAdvice().todoAdvice}</p>
+              </div>
+              <div className="bg-white p-4 rounded border-l-4 border-[#0B970D] shadow-sm">
+                <div className="font-bold text-[#0B970D] mb-1">【予算と買い物のバランス】</div>
+                <p className="text-gray-800">{generateAiAdvice().financeAdvice}</p>
+              </div>
+            </div>
+            <button onClick={() => setIsAiModalOpen(false)} className="w-full mt-6 bg-[#7100FF] text-white p-3 rounded font-bold shadow-md hover:opacity-90">閉じる</button>
+          </div>
+        </div>
+      )}
+
+      {/* -------------------- 問い合わせモーダル -------------------- */}
+      {isContactModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF]">
+            <div className="flex justify-between items-center mb-4 border-b-2 border-[#00BFFF] pb-2">
+              <h3 className="text-xl font-bold text-[#0000CD]">お問い合わせ</h3>
+              <button onClick={() => setIsContactModalOpen(false)} className="text-gray-500 hover:text-[#FF3356] font-bold text-3xl">&times;</button>
+            </div>
+            <form onSubmit={handleContactSubmit} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-sm font-bold mb-1 text-[#0000CD]">件名</label>
+                <input type="text" value={contactSubject} onChange={e => setContactSubject(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full bg-white focus:outline-none focus:border-[#00BFFF]" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1 text-[#0000CD]">問い合わせ内容</label>
+                <textarea rows={5} value={contactBody} onChange={e => setContactBody(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full bg-white focus:outline-none focus:border-[#00BFFF]" />
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button type="button" onClick={() => setIsContactModalOpen(false)} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 rounded font-bold hover:bg-[#87CEFA]/20">キャンセル</button>
+                <button type="submit" className="flex-1 bg-[#00BFFF] text-white p-3 rounded font-bold hover:bg-[#0000CD]">送信</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
