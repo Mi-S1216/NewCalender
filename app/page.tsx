@@ -62,7 +62,6 @@ interface FinanceTransaction { id: string; type: 'income' | 'expense'; amount: n
 interface Category { id: string; type: string; name: string; color_code: string; sort_order: number; }
 interface Schedule { id: string; title: string; start_time: string; end_time: string; is_all_day: boolean; category_id: string; recurring_id: string | null; }
 
-// PC環境等でも必ず24時間表記で設定できるカスタム時間セレクトコンポーネント
 const TimeSelect = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => {
   const h = value ? value.split(':')[0] : '00'
   const m = value ? value.split(':')[1] : '00'
@@ -70,14 +69,14 @@ const TimeSelect = ({ value, onChange }: { value: string, onChange: (v: string) 
     <div className="flex items-center flex-1 bg-white border-2 border-[#87CEFA] rounded p-1 md:p-1.5 focus-within:border-[#00BFFF]">
       <select value={h} onChange={e => onChange(`${e.target.value}:${m}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
         {Array.from({length: 24}).map((_, i) => {
-          const hh = String(i).padStart(2, '0');
+          const hh = String(i).padStart(2, '0')
           return <option key={hh} value={hh}>{hh}</option>
         })}
       </select>
       <span className="font-bold text-[#0000CD] mb-[2px] mx-1">:</span>
       <select value={m} onChange={e => onChange(`${h}:${e.target.value}`)} className="focus:outline-none bg-transparent font-bold text-base text-[#0000CD] cursor-pointer appearance-none text-center w-full">
         {Array.from({length: 12}).map((_, i) => {
-          const mm = String(i * 5).padStart(2, '0');
+          const mm = String(i * 5).padStart(2, '0')
           return <option key={mm} value={mm}>{mm}</option>
         })}
       </select>
@@ -91,8 +90,19 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [isLoginMode, setIsLoginMode] = useState(true)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+  const [showAuthSuccessBanner, setShowAuthSuccessBanner] = useState(false)
 
   useEffect(() => {
+    // メール認証リンク等（URLハッシュにaccess_tokenまたはtype=signupが含まれる場合）を検知
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash
+      const search = window.location.search
+      if (hash.includes('access_token=') || hash.includes('type=recovery') || hash.includes('type=signup') || search.includes('type=signup')) {
+        setShowAuthSuccessBanner(true)
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
@@ -106,6 +116,7 @@ export default function App() {
     } else {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) alert('登録失敗: ' + error.message)
+      else alert('確認メールを送信した。メール内のリンクから認証を完了させよ。')
     }
   }
 
@@ -135,7 +146,17 @@ export default function App() {
     )
   }
 
-  return <Dashboard userId={session.user.id} />
+  return (
+    <>
+      {showAuthSuccessBanner && (
+        <div className="bg-[#00FF79] text-[#0000CD] font-bold p-3 text-center flex justify-between items-center shadow-md border-b-2 border-[#0000CD]">
+          <span className="flex-1">メール認証が完了した。ログイン済みである。</span>
+          <button onClick={() => setShowAuthSuccessBanner(false)} className="px-2 font-extrabold text-lg">&times;</button>
+        </div>
+      )}
+      <Dashboard userId={session.user.id} />
+    </>
+  )
 }
 
 function Dashboard({ userId }: { userId: string }) {
@@ -147,18 +168,15 @@ function Dashboard({ userId }: { userId: string }) {
   const [currentDate, setCurrentDate] = useState<Date | null>(null)
   const [todayString, setTodayString] = useState('')
 
-  // ToDo
   const [todoTitle, setTodoTitle] = useState('')
   const [todoPriority, setTodoPriority] = useState<number>(3)
   const [todoDueDate, setTodoDueDate] = useState('')
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
 
-  // カレンダー操作
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
   const [selectedDates, setSelectedDates] = useState<string[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  // 収支・予定登録
   const [modalType, setModalType] = useState<'schedule' | 'income' | 'expense'>('schedule')
   const [amountStr, setAmountStr] = useState<string>('')
   const [isRecurring, setIsRecurring] = useState(false)
@@ -171,14 +189,12 @@ function Dashboard({ userId }: { userId: string }) {
   const [scheduleMode, setScheduleMode] = useState<'single' | 'weekly'>('single')
   const [scheduleEndDate, setScheduleEndDate] = useState('') 
 
-  // カテゴリ関連
   const [categoryId, setCategoryId] = useState<string>('')
   const [isCatDropdownOpen, setIsCatDropdownOpen] = useState(false)
   const [isManageCatModalOpen, setIsManageCatModalOpen] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState('#FF3356')
 
-  // スケジュール詳細・編集用
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
   const [isEditingSchedule, setIsEditingSchedule] = useState(false)
   const [editSchTitle, setEditSchTitle] = useState('')
@@ -244,9 +260,6 @@ function Dashboard({ userId }: { userId: string }) {
     setIsCatDropdownOpen(false)
   }, [modalType, categories, editingTxId])
 
-  // =====================
-  // ToDo処理
-  // =====================
   const submitTodo = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!todoTitle.trim()) return
@@ -277,20 +290,17 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const toggleTodo = async (id: string, status: boolean) => {
-    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id); 
+    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id)
     if (error) alert('状態更新エラー: ' + error.message)
-    else fetchData();
+    else fetchData()
   }
 
   const deleteTodo = async (id: string) => {
-    const { error } = await supabase.from('todos').delete().eq('id', id); 
+    const { error } = await supabase.from('todos').delete().eq('id', id)
     if (error) alert('削除エラー: ' + error.message)
-    else fetchData();
+    else fetchData()
   }
 
-  // =====================
-  // カテゴリ処理
-  // =====================
   const addCategory = async () => {
     if (!newCatName.trim()) return
     const currentMax = categories.filter(c => c.type === modalType).length
@@ -300,9 +310,9 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteCategory = async (id: string) => {
-    const { error } = await supabase.from('categories').delete().eq('id', id); 
+    const { error } = await supabase.from('categories').delete().eq('id', id)
     if (error) alert('カテゴリ削除エラー: ' + error.message)
-    else fetchData();
+    else fetchData()
   }
 
   const moveCategory = async (currentIndex: number, direction: 'up' | 'down') => {
@@ -312,7 +322,6 @@ function Dashboard({ userId }: { userId: string }) {
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
     const temp = newCats[currentIndex]; newCats[currentIndex] = newCats[targetIndex]; newCats[targetIndex] = temp;
     
-    // sort_orderを更新した後、画面表示用に配列自体もソートする
     const updatedCategories = categories.map(c => {
       if (c.type !== modalType) return c
       const newMatch = newCats.findIndex(nc => nc.id === c.id)
@@ -325,9 +334,6 @@ function Dashboard({ userId }: { userId: string }) {
     }
   }
 
-  // =====================
-  // モーダル・収支・予定登録処理
-  // =====================
   const handleDateClick = (dateString: string) => {
     if (isMultiSelectMode) {
       setSelectedDates(prev => prev.includes(dateString) ? prev.filter(d => d !== dateString) : [...prev, dateString])
@@ -340,7 +346,7 @@ function Dashboard({ userId }: { userId: string }) {
     setIsModalOpen(false)
     if (!isMultiSelectMode) setSelectedDates([])
     setAmountStr(''); setScheduleTitle(''); setIsCatDropdownOpen(false); setEditingTxId(null);
-    setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false); // 入力内容をリセット
+    setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false);
   }
 
   const startEditTransaction = (tx: FinanceTransaction) => {
@@ -351,14 +357,14 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteTransaction = async (id: string) => {
-    const { error } = await supabase.from('finance_transactions').delete().eq('id', id); 
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id)
     if (error) alert('削除エラー: ' + error.message)
-    else fetchData();
+    else fetchData()
   }
 
   const addData = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedDates.length === 0 || !categoryId) return alert('日付またはカテゴリが選択されていません。')
+    if (selectedDates.length === 0 || !categoryId) return alert('日付またはカテゴリが選択されていない。')
 
     if (modalType === 'schedule') {
       if (!scheduleTitle.trim()) return
@@ -381,7 +387,7 @@ function Dashboard({ userId }: { userId: string }) {
           curr.setDate(curr.getDate() + 7)
         }
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
-        if (error) return alert('予定の登録に失敗しました: ' + error.message)
+        if (error) return alert('予定の登録に失敗した: ' + error.message)
       } else {
         const scheduleInserts = selectedDates.map(dateStr => {
           const startDateTime = isAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${startTime}:00+09:00`
@@ -389,24 +395,22 @@ function Dashboard({ userId }: { userId: string }) {
           return { user_id: userId, category_id: categoryId, title: scheduleTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: isAllDay }
         })
         const { error } = await supabase.from('schedules').insert(scheduleInserts)
-        if (error) return alert('予定の登録に失敗しました: ' + error.message)
+        if (error) return alert('予定の登録に失敗した: ' + error.message)
       }
-      // 登録完了後にリセット
       setScheduleTitle(''); setScheduleMode('single'); setScheduleEndDate('');
       setStartTime('00:00'); setEndTime('00:00'); setIsAllDay(false);
     } else {
       const numAmount = Number(amountStr)
-      if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力してください。')
+      if (numAmount <= 0 || isNaN(numAmount)) return alert('エラー：金額は1以上の数値を入力せよ。')
 
       if (editingTxId) {
         const { error } = await supabase.from('finance_transactions').update({
           amount: numAmount, category_id: categoryId, type: modalType
         }).eq('id', editingTxId)
-        if (error) return alert('収支の更新に失敗しました: ' + error.message)
+        if (error) return alert('収支の更新に失敗した: ' + error.message)
         setEditingTxId(null)
       } else {
         if (isRecurring) {
-          // 向こう5年間（60ヶ月）分のトランザクションを一括生成する
           const txInserts = []
           for (const dateStr of selectedDates) {
             const startDate = new Date(dateStr)
@@ -417,8 +421,6 @@ function Dashboard({ userId }: { userId: string }) {
             for (let i = 0; i < 60; i++) {
               const targetYear = startYear + Math.floor((startMonth + i) / 12)
               const targetMonth = (startMonth + i) % 12
-              
-              // 選択した日付が翌月以降に存在しない場合（例: 31日が2月にない場合）は、その月の末日に自動調整
               const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate()
               const targetDate = Math.min(baseDate, lastDay)
               const d = new Date(targetYear, targetMonth, targetDate)
@@ -433,13 +435,13 @@ function Dashboard({ userId }: { userId: string }) {
             }
           }
           const { error } = await supabase.from('finance_transactions').insert(txInserts)
-          if (error) return alert('固定費の登録に失敗しました: ' + error.message)
+          if (error) return alert('固定費の登録に失敗した: ' + error.message)
         } else {
           const txInserts = selectedDates.map(dateStr => ({
             user_id: userId, category_id: categoryId, type: modalType, amount: numAmount, transaction_date: dateStr
           }))
           const { error } = await supabase.from('finance_transactions').insert(txInserts)
-          if (error) return alert('収支の登録に失敗しました: ' + error.message)
+          if (error) return alert('収支の登録に失敗した: ' + error.message)
         }
       }
       setAmountStr('')
@@ -448,9 +450,6 @@ function Dashboard({ userId }: { userId: string }) {
     setIsRecurring(false); setIsModalOpen(false); setSelectedDates([]); fetchData();
   }
 
-  // =====================
-  // 予定編集・削除処理
-  // =====================
   const startEditSchedule = () => {
     if (!selectedSchedule) return
     setEditSchTitle(selectedSchedule.title)
@@ -472,7 +471,7 @@ function Dashboard({ userId }: { userId: string }) {
       title: editSchTitle, start_time: startDateTime, end_time: endDateTime, is_all_day: editSchIsAllDay, category_id: editSchCatId
     }).eq('id', selectedSchedule.id)
 
-    if (error) return alert('予定の更新に失敗しました: ' + error.message)
+    if (error) return alert('予定の更新に失敗した: ' + error.message)
     setIsEditingSchedule(false); setSelectedSchedule(null); fetchData();
   }
 
@@ -489,9 +488,6 @@ function Dashboard({ userId }: { userId: string }) {
     setSelectedSchedule(null); fetchData();
   }
 
-  // =====================
-  // カレンダー描画用
-  // =====================
   const getDaysInMonth = () => {
     if (!currentDate) return []
     const y = currentDate.getFullYear(); const m = currentDate.getMonth();
@@ -512,7 +508,6 @@ function Dashboard({ userId }: { userId: string }) {
 
   return (
     <main className="min-h-screen bg-[#87CEFA]/30 p-2 md:p-8 flex flex-col xl:flex-row gap-4 md:gap-6 relative pb-32 font-sans">
-      {/* -------------------- カレンダーエリア -------------------- */}
       <section className="flex-1 bg-[#F0F8FF] p-2 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
         <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-2 md:gap-4">
           <div className="flex items-center gap-2 md:gap-4">
@@ -600,7 +595,6 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       </section>
 
-      {/* -------------------- ToDoエリア -------------------- */}
       <section className="w-full xl:w-[400px] bg-[#F0F8FF] p-4 md:p-6 rounded-xl shadow-xl border-2 border-[#87CEFA] text-[#0000CD] flex flex-col">
         <h2 className="text-lg md:text-xl font-bold mb-4 border-b-2 border-[#00BFFF] pb-2">ToDoリスト</h2>
         <form onSubmit={submitTodo} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded border border-[#87CEFA]">
@@ -638,13 +632,11 @@ function Dashboard({ userId }: { userId: string }) {
         </ul>
       </section>
 
-      {/* -------------------- 貯金額表示 -------------------- */}
       <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
         <div className="text-[10px] md:text-xs opacity-90 mb-0.5 md:mb-1">今月のトータル貯金額</div>
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
 
-      {/* -------------------- カテゴリ管理モーダル -------------------- */}
       {isManageCatModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] flex flex-col">
@@ -684,30 +676,29 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* -------------------- 登録・一括操作モーダル -------------------- */}
+      {/* 登録・一括操作モーダル（サイズを max-w-[560px] へ拡大） */}
       {isModalOpen && selectedDates.length > 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-4 md:p-6 rounded-xl w-full max-w-[400px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg md:text-xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
-              <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-2xl">&times;</button>
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl md:text-2xl font-extrabold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
+              <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-3xl">&times;</button>
             </div>
             
-            {/* この日の収支記録 */}
             {selectedDates.length === 1 && selectedDayTransactions.length > 0 && (
-              <div className="mb-4 md:mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
-                <h4 className="font-bold text-sm mb-2 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
+              <div className="mb-6 bg-white p-4 rounded border-2 border-[#87CEFA] shadow-inner">
+                <h4 className="font-bold text-base mb-3 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
                 <div className="space-y-2">
                   {selectedDayTransactions.map(tx => (
-                    <div key={tx.id} className="flex justify-between items-center text-sm border-b border-gray-100 pb-1">
+                    <div key={tx.id} className="flex justify-between items-center text-sm md:text-base border-b border-gray-100 pb-1">
                       <div className="flex-1">
                         <span className={`font-bold mr-2 ${tx.type === 'income' ? 'text-[#0000CD]' : 'text-[#FF3356]'}`}>{tx.type === 'income' ? '収入' : '支出'}</span>
                         <span className="text-gray-700 font-semibold">{categories.find(c => c.id === tx.category_id)?.name}</span>
-                        <span className="font-bold ml-2 text-black">{tx.amount.toLocaleString()}円</span>
+                        <span className="font-bold ml-3 text-black">{tx.amount.toLocaleString()}円</span>
                       </div>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => startEditTransaction(tx)} className="text-[#00BFFF] text-xs font-bold hover:underline p-1">編集</button>
-                        <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-xs font-bold hover:underline p-1">削除</button>
+                      <div className="flex gap-3">
+                        <button type="button" onClick={() => startEditTransaction(tx)} className="text-[#00BFFF] text-sm font-bold hover:underline p-1">編集</button>
+                        <button type="button" onClick={() => deleteTransaction(tx.id)} className="text-[#FF3356] text-sm font-bold hover:underline p-1">削除</button>
                       </div>
                     </div>
                   ))}
@@ -715,43 +706,41 @@ function Dashboard({ userId }: { userId: string }) {
               </div>
             )}
             
-            {/* モーダルタブ */}
-            <div className="flex gap-1 mb-4 p-1 bg-[#87CEFA]/30 rounded-lg">
-              <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
-              <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
-              <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
+            <div className="flex gap-2 mb-6 p-1.5 bg-[#87CEFA]/30 rounded-lg">
+              <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
+              <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
+              <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2.5 rounded text-sm md:text-base font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
             </div>
             
-            {/* メインフォーム */}
-            <form onSubmit={addData} className="flex flex-col gap-4">
+            <form onSubmit={addData} className="flex flex-col gap-5">
               {modalType === 'schedule' ? (
                 <>
                   <div>
-                    <label className="block text-sm font-bold mb-1 text-[#0000CD]">予定のタイトル</label>
-                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-base" />
+                    <label className="block text-sm md:text-base font-bold mb-1.5 text-[#0000CD]">予定のタイトル</label>
+                    <input type="text" value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} required className="border-2 border-[#87CEFA] p-3 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
                   </div>
-                  <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
+                  <div className="flex items-center gap-2 bg-white p-3 rounded border border-[#87CEFA]">
                     <input type="checkbox" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} id="allday" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
-                    <label htmlFor="allday" className="text-sm cursor-pointer font-bold text-[#0000CD]">終日</label>
+                    <label htmlFor="allday" className="text-base cursor-pointer font-bold text-[#0000CD]">終日</label>
                   </div>
                   {!isAllDay && (
-                    <div className="flex gap-2 items-center bg-white p-2 rounded border border-[#87CEFA]">
+                    <div className="flex gap-3 items-center bg-white p-3 rounded border border-[#87CEFA]">
                       <TimeSelect value={startTime} onChange={setStartTime} />
                       <span className="font-bold text-[#0000CD]">〜</span>
                       <TimeSelect value={endTime} onChange={setEndTime} />
                     </div>
                   )}
                   {selectedDates.length === 1 && (
-                    <div className="border-t-2 border-[#87CEFA] pt-3 mt-1">
-                      <label className="block text-sm font-bold mb-2 text-[#0000CD]">登録設定</label>
-                      <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as 'single'|'weekly')} className="border-2 border-[#87CEFA] p-2 rounded w-full mb-2 text-sm font-bold focus:outline-none focus:border-[#00BFFF]">
+                    <div className="border-t-2 border-[#87CEFA] pt-4 mt-1">
+                      <label className="block text-base font-bold mb-2 text-[#0000CD]">登録設定</label>
+                      <select value={scheduleMode} onChange={(e) => setScheduleMode(e.target.value as 'single'|'weekly')} className="border-2 border-[#87CEFA] p-2.5 rounded w-full mb-3 text-base font-bold focus:outline-none focus:border-[#00BFFF]">
                         <option value="single">この日のみ</option>
                         <option value="weekly">毎週（繰り返し設定）</option>
                       </select>
                       {scheduleMode === 'weekly' && (
-                        <div className="pl-3 border-l-4 border-[#00BFFF] bg-white p-2 rounded">
-                          <label className="block text-xs font-bold mb-1 text-[#0000CD]">終了日</label>
-                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded text-sm w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
+                        <div className="pl-3 border-l-4 border-[#00BFFF] bg-white p-3 rounded">
+                          <label className="block text-sm font-bold mb-1 text-[#0000CD]">終了日</label>
+                          <input type="date" value={scheduleEndDate} min={selectedDates[0]} onChange={e => setScheduleEndDate(e.target.value)} required className="border-2 border-[#87CEFA] p-2.5 rounded text-base w-full focus:outline-none focus:border-[#00BFFF] font-bold" />
                         </div>
                       )}
                     </div>
@@ -760,22 +749,22 @@ function Dashboard({ userId }: { userId: string }) {
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm font-bold mb-1 text-[#0000CD]">金額 (円)</label>
-                    <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
+                    <label className="block text-sm md:text-base font-bold mb-1.5 text-[#0000CD]">金額 (円)</label>
+                    <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-3 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-xl" />
                   </div>
                   {!editingTxId && (
-                    <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
+                    <div className="flex items-center gap-2 bg-white p-3 rounded border border-[#87CEFA]">
                       <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} id="recurring" className="w-5 h-5 cursor-pointer accent-[#00BFFF]"/>
-                      <label htmlFor="recurring" className="text-xs cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
+                      <label htmlFor="recurring" className="text-sm md:text-base cursor-pointer text-[#0000CD] font-bold">毎月選択した日に固定費として自動登録する</label>
                     </div>
                   )}
                 </>
               )}
               
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-bold text-[#0000CD]">カテゴリ</label>
-                  <button type="button" onClick={() => setIsManageCatModalOpen(true)} className="text-xs text-[#00BFFF] font-bold hover:underline bg-white px-2 py-1 rounded border border-[#87CEFA] shadow-sm">管理・並び替え</button>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-sm md:text-base font-bold text-[#0000CD]">カテゴリ</label>
+                  <button type="button" onClick={() => setIsManageCatModalOpen(true)} className="text-sm text-[#00BFFF] font-bold hover:underline bg-white px-2 py-1 rounded border border-[#87CEFA] shadow-sm">管理・並び替え</button>
                 </div>
                 
                 <div className="relative">
@@ -785,23 +774,23 @@ function Dashboard({ userId }: { userId: string }) {
                   >
                     {categoryId ? (
                       <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
-                        <span className="font-bold text-[#0000CD] text-base md:text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
+                        <div className="w-6 h-6 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
                       </div>
                     ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
-                    <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
+                    <span className="text-[#00BFFF] text-sm font-bold ml-2">▼</span>
                   </div>
                   
                   {isCatDropdownOpen && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-[#00BFFF] rounded shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-[#00BFFF] rounded shadow-xl max-h-56 overflow-y-auto custom-scrollbar">
                       {categories.filter(c => c.type === modalType).map(c => (
                         <div 
                           key={c.id} 
                           onClick={() => { setCategoryId(c.id); setIsCatDropdownOpen(false); }}
-                          className="flex items-center gap-3 p-3 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0"
+                          className="flex items-center gap-3 p-3.5 hover:bg-[#F0F8FF] cursor-pointer border-b border-gray-100 last:border-0"
                         >
-                          <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
-                          <span className="font-bold text-[#0000CD] truncate">{c.name}</span>
+                          <div className="w-6 h-6 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: c.color_code }} />
+                          <span className="font-bold text-[#0000CD] text-base truncate">{c.name}</span>
                         </div>
                       ))}
                     </div>
@@ -809,9 +798,9 @@ function Dashboard({ userId }: { userId: string }) {
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-2 md:mt-4">
-                <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md">閉じる</button>
-                <button type="submit" className={`flex-1 text-white p-3 rounded font-bold shadow-md text-base md:text-lg transition-colors ${editingTxId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
+              <div className="flex gap-4 mt-3">
+                <button type="button" onClick={handleCloseModal} className="flex-1 bg-white text-[#0000CD] border-2 border-[#87CEFA] p-3.5 rounded font-bold hover:bg-[#87CEFA]/20 transition-colors shadow-md text-base">閉じる</button>
+                <button type="submit" className={`flex-1 text-white p-3.5 rounded font-bold shadow-md text-lg transition-colors ${editingTxId ? 'bg-[#0000CD]' : 'bg-[#00BFFF] hover:bg-[#0000CD]'}`}>
                   {editingTxId ? '更新' : '登録'}
                 </button>
               </div>
@@ -820,7 +809,6 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* -------------------- 予定の詳細・編集モーダル -------------------- */}
       {selectedSchedule && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#F0F8FF] p-6 rounded-xl w-full max-w-80 shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto">
