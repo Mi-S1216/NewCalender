@@ -110,11 +110,11 @@ export default function App() {
     setAuthMessage('')
     if (isLoginMode) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) alert('ログイン失敗: ' + error.message)
+      if (error) alert('ログイン失敗: ' + error.message )
     } else {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) alert('登録失敗: ' + error.message)
-      else setAuthMessage('✉️ 確認メールを送信しました。メール内のリンクをクリックして認証を完了してください。')
+      else setAuthMessage('✉️ 確認メールを送信しました。メール内のリンクをクリックしたら認証完了です。そのままログインしてください。')
     }
   }
 
@@ -129,7 +129,7 @@ export default function App() {
           </div>
         )}
         <form onSubmit={handleAuth} className="bg-[#F0F8FF] p-8 rounded-xl shadow-xl w-full max-w-sm flex flex-col gap-5 text-[#0000CD] border-2 border-[#00BFFF]">
-          <h2 className="text-2xl font-bold text-center border-b-2 border-[#00BFFF] pb-2">{isLoginMode ? 'ログイン' : '新規登録'}</h2>
+          <h2 className="text-2xl font-bold text-center border-b-2 border-[#00BFFF] pb-2">{isLoginMode ? 'ログイン' : '新規アカウント登録'}</h2>
           <div>
             <label className="block text-sm font-bold mb-1">メールアドレス</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="border-2 border-[#87CEFA] p-2 rounded w-full bg-white focus:outline-none focus:border-[#00BFFF]" />
@@ -142,7 +142,7 @@ export default function App() {
             {isLoginMode ? 'ログイン' : '登録'}
           </button>
           <button type="button" onClick={() => setIsLoginMode(!isLoginMode)} className="text-sm text-[#0000CD] font-bold hover:underline text-center">
-            {isLoginMode ? 'アカウントを作成する' : '既存のアカウントでログイン'}
+            {isLoginMode ? 'アカウントをお持ちでない方はこちら' : '既存のアカウントでログイン'}
           </button>
         </form>
       </div>
@@ -573,7 +573,7 @@ function Dashboard({ userId }: { userId: string }) {
               </button>
             )}
             <button onClick={() => setIsAiModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-[#7100FF] text-white rounded font-bold text-xs md:text-sm shadow-md hover:opacity-90">
-              AIマネジメント ✨
+              分析 💻️
             </button>
             <button onClick={() => setIsContactModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#0000CD] border-2 border-[#0000CD] rounded font-bold text-xs md:text-sm hover:bg-[#87CEFA]/20">
               問い合わせ
@@ -983,7 +983,7 @@ function Dashboard({ userId }: { userId: string }) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#7100FF]">
             <div className="flex justify-between items-center mb-4 border-b-2 border-[#7100FF] pb-2">
-              <h3 className="text-xl font-extrabold text-[#7100FF]">AIスケジュール＆タスク診断</h3>
+              <h3 className="text-xl font-extrabold text-[#7100FF]">スケジュール&タスク診断</h3>
               <button onClick={() => setIsAiModalOpen(false)} className="text-gray-500 hover:text-black font-bold text-3xl">&times;</button>
             </div>
             <div className="space-y-4 text-sm md:text-base">
