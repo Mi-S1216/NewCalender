@@ -1,0 +1,13 @@
+/* layout.tsx で import './mobile.css' する */
+html, body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select, textarea, [role="button"] { touch-action: manipulation; }
+body {
+  padding-top: env(safe-area-inset-top);
+}
+.custom-scrollbar { -webkit-overflow-scrolling: touch; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient, Session } from '@supabase/supabase-js'
+import AiChatModal from '../components/AiChatModal'
+import CalendarSyncModal from '../components/CalendarSyncModal'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -28,6 +30,7 @@ const HOLIDAYS = [
   '2034-01-01', '2034-01-02', '2034-01-09', '2034-02-11', '2034-02-23', '2034-03-20', '2034-04-29', '2034-05-03', '2034-05-04', '2034-05-05', '2034-07-17', '2034-08-11', '2034-09-18', '2034-09-23', '2034-10-09', '2034-11-03', '2034-11-23',
   '2035-01-01', '2035-01-08', '2035-02-11', '2035-02-12', '2035-02-23', '2035-03-21', '2035-04-29', '2035-04-30', '2035-05-03', '2035-05-04', '2035-05-05', '2035-07-16', '2035-08-11', '2035-09-17', '2035-09-23', '2035-09-24', '2035-10-08', '2035-11-03', '2035-11-23'
 ]
+const HOLIDAY_SET = new Set(HOLIDAYS)
 
 const getSavingsColor = (amount: number) => {
   if (amount <= -100000) return '#000944'
@@ -204,6 +207,7 @@ function Dashboard({ userId }: { userId: string }) {
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false)
 
   const [isAiModalOpen, setIsAiModalOpen] = useState(false)
+  const [isCalSyncOpen, setIsCalSyncOpen] = useState(false)
   const [isContactModalOpen, setIsContactModalOpen] = useState(false)
   const [contactSubject, setContactSubject] = useState('')
   const [contactBody, setContactBody] = useState('')
@@ -212,6 +216,39 @@ function Dashboard({ userId }: { userId: string }) {
     setCurrentDate(new Date())
     setTodayString(getLocalYYYYMMDD(new Date()))
   }, [])
+
+  // 明日の日付。期日がこれ以前の未完了ToDoを赤く表示する
+  const tomorrowString = useMemo(() => {
+    if (!todayString) return ''
+    const d = new Date(todayString + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    return getLocalYYYYMMDD(d)
+  }, [todayString])
+
+  // ---- 描画高速化: 日付ごとの集計を1回だけ計算 ----
+  const txByDate = useMemo(() => {
+    const m = new Map<string, { income: number; expense: number }>()
+    for (const t of transactions) {
+      const v = m.get(t.transaction_date) ?? { income: 0, expense: 0 }
+      v[t.type] += t.amount
+      m.set(t.transaction_date, v)
+    }
+    return m
+  }, [transactions])
+
+  const schedulesByDate = useMemo(() => {
+    const m = new Map<string, Schedule[]>()
+    for (const s of schedules) {
+      const k = getLocalYYYYMMDD(new Date(s.start_time))
+      if (!m.has(k)) m.set(k, [])
+      m.get(k)!.push(s)
+    }
+    for (const list of m.values()) list.sort((a, b) =>
+      a.is_all_day !== b.is_all_day ? (a.is_all_day ? -1 : 1) : new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    return m
+  }, [schedules])
+
+  const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
 
   const fetchData = async () => {
     if (!currentDate) return
@@ -295,16 +332,17 @@ function Dashboard({ userId }: { userId: string }) {
     setTodoTitle(''); setTodoDueDate(''); setTodoPriority(3);
   }
 
+  // 楽観的更新: 先に画面を変えてから通信する
   const toggleTodo = async (id: string, status: boolean) => {
-    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id); 
-    if (error) alert('状態更新エラー: ' + error.message)
-    else fetchData();
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, is_completed: !status } : t))
+    const { error } = await supabase.from('todos').update({ is_completed: !status }).eq('id', id)
+    if (error) { alert('状態更新エラー: ' + error.message); fetchData() }
   }
 
   const deleteTodo = async (id: string) => {
-    const { error } = await supabase.from('todos').delete().eq('id', id); 
-    if (error) alert('削除エラー: ' + error.message)
-    else fetchData();
+    setTodos(prev => prev.filter(t => t.id !== id))
+    const { error } = await supabase.from('todos').delete().eq('id', id)
+    if (error) { alert('削除エラー: ' + error.message); fetchData() }
   }
 
   const addWish = async (e: React.FormEvent) => {
@@ -317,11 +355,15 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const toggleWish = async (id: string, status: boolean) => {
-    await supabase.from('wishlists').update({ is_completed: !status }).eq('id', id); fetchData();
+    setWishes(prev => prev.map(w => w.id === id ? { ...w, is_completed: !status } : w))
+    const { error } = await supabase.from('wishlists').update({ is_completed: !status }).eq('id', id)
+    if (error) { alert('状態更新エラー: ' + error.message); fetchData() }
   }
 
   const deleteWish = async (id: string) => {
-    await supabase.from('wishlists').delete().eq('id', id); fetchData();
+    setWishes(prev => prev.filter(w => w.id !== id))
+    const { error } = await supabase.from('wishlists').delete().eq('id', id)
+    if (error) { alert('削除エラー: ' + error.message); fetchData() }
   }
 
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -333,20 +375,6 @@ function Dashboard({ userId }: { userId: string }) {
       alert('送信が完了しました。')
       setContactSubject(''); setContactBody(''); setIsContactModalOpen(false);
     }
-  }
-
-  const generateAiAdvice = () => {
-    const highPriorityTodos = todos.filter(t => !t.is_completed && t.priority >= 4).length
-    const totalSchedules = schedules.length
-    const monthlyIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
-    const monthlyExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-    const balance = monthlyIncome - monthlyExpense
-
-    let scheduleAdvice = totalSchedules > 20 ? '予定が密になっています。優先度の低い予定の入れ替えを検討してください。' : 'スケジュールには余裕があります。'
-    let todoAdvice = highPriorityTodos > 0 ? `優先度4以上のタスクが ${highPriorityTodos} 件残っています。直近の隙間時間を割り当ててください。` : '最優先タスクは消化されています。'
-    let financeAdvice = balance < 0 ? '今月は支出が収入を上回っています。固定費やウィッシュリストの購入を見直してください。' : '収支は黒字を維持しています。'
-
-    return { scheduleAdvice, todoAdvice, financeAdvice }
   }
 
   const addCategory = async () => {
@@ -377,9 +405,7 @@ function Dashboard({ userId }: { userId: string }) {
     }).sort((a, b) => a.sort_order - b.sort_order)
     setCategories(updatedCategories)
     
-    for (let i = 0; i < newCats.length; i++) {
-      await supabase.from('categories').update({ sort_order: i }).eq('id', newCats[i].id)
-    }
+    await Promise.all(newCats.map((c, i) => supabase.from('categories').update({ sort_order: i }).eq('id', c.id)))
   }
 
   const handleDateClick = (dateString: string) => {
@@ -405,9 +431,9 @@ function Dashboard({ userId }: { userId: string }) {
   }
 
   const deleteTransaction = async (id: string) => {
-    const { error } = await supabase.from('finance_transactions').delete().eq('id', id); 
-    if (error) alert('削除エラー: ' + error.message)
-    else fetchData();
+    setTransactions(prev => prev.filter(t => t.id !== id))
+    const { error } = await supabase.from('finance_transactions').delete().eq('id', id)
+    if (error) { alert('削除エラー: ' + error.message); fetchData() }
   }
 
   const addData = async (e: React.FormEvent) => {
@@ -511,7 +537,7 @@ function Dashboard({ userId }: { userId: string }) {
   const saveEditSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedSchedule || !editSchTitle.trim()) return
-    const dateStr = selectedSchedule.start_time.substring(0, 10)
+    const dateStr = getLocalYYYYMMDD(new Date(selectedSchedule.start_time))
     const startDateTime = editSchIsAllDay ? `${dateStr}T00:00:00+09:00` : `${dateStr}T${editSchStart}:00+09:00`
     const endDateTime = editSchIsAllDay ? `${dateStr}T23:55:00+09:00` : `${dateStr}T${editSchEnd}:00+09:00`
 
@@ -573,7 +599,10 @@ function Dashboard({ userId }: { userId: string }) {
               </button>
             )}
             <button onClick={() => setIsAiModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-[#7100FF] text-white rounded font-bold text-xs md:text-sm shadow-md hover:opacity-90">
-              分析 💻️
+              AIに相談 💻️
+            </button>
+            <button onClick={() => setIsCalSyncOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#00BFFF] border-2 border-[#00BFFF] rounded font-bold text-xs md:text-sm hover:bg-[#87CEFA]/20">
+              カレンダー連携
             </button>
             <button onClick={() => setIsContactModalOpen(true)} className="px-2 py-1 md:px-4 md:py-2 bg-white text-[#0000CD] border-2 border-[#0000CD] rounded font-bold text-xs md:text-sm hover:bg-[#87CEFA]/20">
               問い合わせ
@@ -583,8 +612,7 @@ function Dashboard({ userId }: { userId: string }) {
             </button>
           </div>
         </div>
-        {/* -- 500行目到達箇所：カレンダーグリッドの描画処理がこの後続く -- */}
-<div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
+        <div className="pb-2 md:pb-4 flex-1 w-full [container-type:inline-size]">
           <div className="w-[105%] -ml-[2.5%]">
             <div className="grid grid-cols-7 gap-0.5 md:gap-2 text-center font-bold mb-1 md:mb-2 text-[2.45cqi] md:text-[11px]">
               <div className="text-[#FF3356]">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div className="text-[#00BFFF]">土</div>
@@ -594,24 +622,19 @@ function Dashboard({ userId }: { userId: string }) {
                 if (!day) return <div key={`empty-${index}`} className="aspect-[21/33] md:aspect-auto md:min-h-[154px] bg-[#87CEFA]/10 rounded-sm md:rounded" />
                 const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
                 
-                const dailyTx = transactions.filter(t => t.transaction_date === dateString)
-                const dIncome = dailyTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
-                const dExpense = dailyTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-                
-                const dailySchedules = schedules.filter(s => getLocalYYYYMMDD(new Date(s.start_time)) === dateString).sort((a, b) => {
-                  if (a.is_all_day && !b.is_all_day) return -1
-                  if (!a.is_all_day && b.is_all_day) return 1
-                  return new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-                })
+                const dayTx = txByDate.get(dateString)
+                const dIncome = dayTx?.income ?? 0
+                const dExpense = dayTx?.expense ?? 0
+                const dailySchedules = schedulesByDate.get(dateString) ?? []
                 
                 const isSelected = selectedDates.includes(dateString)
-                const dateObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
-                const dayOfWeek = dateObj.getDay()
+                const dayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).getDay()
                 const isToday = dateString === todayString
+                const isHoliday = HOLIDAY_SET.has(dateString)
                 
                 let borderClass = 'border-[1px] md:border-2 border-[#87CEFA]'
                 if (isToday) borderClass = 'border-[3px] md:border-[4px] border-[#0000CD] shadow-[0_0_8px_rgba(0,0,205,0.6)] z-10 relative'
-                else if (HOLIDAYS.includes(dateString)) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
+                else if (isHoliday) borderClass = 'border-[2px] md:border-4 border-[#BA0200] md:shadow-[0_0_10px_rgba(186,2,0,0.3)]'
                 else if (dayOfWeek === 0) borderClass = 'border-[2px] md:border-4 border-[#FF3356] md:shadow-[0_0_10px_rgba(255,51,86,0.3)]'
                 else if (dayOfWeek === 6) borderClass = 'border-[2px] md:border-4 border-[#3DFFF3] md:shadow-[0_0_10px_rgba(61,255,243,0.3)]'
 
@@ -619,12 +642,12 @@ function Dashboard({ userId }: { userId: string }) {
                   <div 
                     key={day} 
                     onClick={() => handleDateClick(dateString)}
-                    className={`aspect-[21/33] md:aspect-auto md:min-h-[154px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-all cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 transform scale-95' : 'hover:shadow-lg hover:bg-[#F0F8FF]'}`}
+                    className={`aspect-[21/33] md:aspect-auto md:min-h-[154px] rounded-sm md:rounded p-[0.5cqi] md:p-1.5 flex flex-col transition-transform cursor-pointer overflow-hidden bg-white ${borderClass} ${isSelected ? 'ring-2 md:ring-4 ring-[#0000CD] bg-[#87CEFA]/20 scale-95' : 'md:hover:shadow-lg md:hover:bg-[#F0F8FF]'}`}
                   >
-                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[2.8cqi] md:text-[11px] leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || HOLIDAYS.includes(dateString) ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
+                    <span className={`font-bold ml-[0.5cqi] md:ml-1 text-[2.8cqi] md:text-[11px] leading-none mt-[0.5cqi] md:mt-0 ${dayOfWeek === 0 || isHoliday ? 'text-[#FF3356]' : dayOfWeek === 6 ? 'text-[#00BFFF]' : 'text-[#0000CD]'}`}>{day}</span>
                     <div className="flex flex-col gap-[0.5cqi] md:gap-1 mt-[1cqi] md:mt-1">
                       {dailySchedules.map(sch => {
-                        const catColor = categories.find(c => c.id === sch.category_id)?.color_code || '#cccccc'
+                        const catColor = catMap.get(sch.category_id)?.color_code || '#cccccc'
                         return (
                           <div 
                             key={sch.id} 
@@ -676,24 +699,28 @@ function Dashboard({ userId }: { userId: string }) {
               </div>
             </form>
             <ul className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              {todos.map(todo => (
-                <li key={todo.id} className="flex justify-between items-center p-2 md:p-3 border border-[#87CEFA] rounded shadow-sm bg-white" style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
-                  <div className="flex items-start gap-2 md:gap-3 flex-1">
-                    <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
-                    <div className="flex flex-col flex-1">
-                      <span className={`font-bold text-sm md:text-base break-words ${todo.is_completed ? 'line-through text-gray-400' : 'text-[#0000CD]'}`}>{todo.title}</span>
-                      <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
-                        {todo.due_date && <span className="text-xs text-gray-500 font-semibold whitespace-nowrap">期日: {todo.due_date.replace(/-/g, '/')}</span>}
+              {todos.map(todo => {
+                const isDueSoon = !todo.is_completed && !!todo.due_date && !!tomorrowString && todo.due_date <= tomorrowString
+                const dueNote = !isDueSoon ? '' : todo.due_date! < todayString ? '(期限切れ)' : todo.due_date === todayString ? '(今日)' : '(明日)'
+                return (
+                  <li key={todo.id} className={`flex justify-between items-center p-2 md:p-3 border rounded shadow-sm ${isDueSoon ? 'bg-[#FF3356] border-[#BA0200]' : 'bg-white border-[#87CEFA]'}`} style={{ borderLeft: `8px solid ${PRIORITY_COLORS[todo.priority]}` }}>
+                    <div className="flex items-start gap-2 md:gap-3 flex-1">
+                      <input type="checkbox" checked={todo.is_completed} onChange={() => toggleTodo(todo.id, todo.is_completed)} className="w-4 h-4 md:w-5 md:h-5 mt-0.5 cursor-pointer accent-[#00BFFF]"/>
+                      <div className="flex flex-col flex-1">
+                        <span className={`font-bold text-sm md:text-base break-words ${todo.is_completed ? 'line-through text-gray-400' : isDueSoon ? 'text-white' : 'text-[#0000CD]'}`}>{todo.title}</span>
+                        <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-1">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap" style={{ backgroundColor: PRIORITY_COLORS[todo.priority] }}>優先度 {todo.priority}</span>
+                          {todo.due_date && <span className={`text-xs font-semibold whitespace-nowrap ${isDueSoon ? 'text-white' : 'text-gray-500'}`}>期日: {todo.due_date.replace(/-/g, '/')}{dueNote}</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-1 shrink-0 ml-2">
-                    <button onClick={() => editTodo(todo)} className="text-[#00BFFF] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">編集</button>
-                    <button onClick={() => deleteTodo(todo.id)} className="text-[#FF3356] text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right">削除</button>
-                  </div>
-                </li>
-              ))}
+                    <div className="flex flex-col gap-1 shrink-0 ml-2">
+                      <button onClick={() => editTodo(todo)} className={`text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right ${isDueSoon ? 'text-white' : 'text-[#00BFFF]'}`}>編集</button>
+                      <button onClick={() => deleteTodo(todo.id)} className={`text-xs md:text-sm font-bold hover:underline whitespace-nowrap text-right ${isDueSoon ? 'text-white' : 'text-[#FF3356]'}`}>削除</button>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         ) : (
@@ -725,7 +752,7 @@ function Dashboard({ userId }: { userId: string }) {
       </section>
 
       {/* -------------------- 貯金額表示 -------------------- */}
-      <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40 transform hover:scale-105 transition-transform" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
+      <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 mb-[env(safe-area-inset-bottom)] p-3 md:p-4 rounded-xl shadow-2xl border-4 font-bold text-base md:text-lg z-40" style={{ backgroundColor: savingsBgColor, color: savingsTextColor, borderColor: savingsTextColor }}>
         <div className="text-[10px] md:text-xs opacity-90 mb-0.5 md:mb-1">今月のトータル貯金額</div>
         {monthlySavings > 0 ? '+' : ''}{monthlySavings.toLocaleString()} 円
       </div>
@@ -753,7 +780,7 @@ function Dashboard({ userId }: { userId: string }) {
             <h4 className="text-sm font-bold text-[#0000CD] mb-2 shrink-0">並び替え (矢印タップで移動)</h4>
             <ul className="space-y-2 overflow-y-auto pr-1 custom-scrollbar flex-1">
               {categories.filter(c => c.type === modalType).map((c, index, arr) => (
-                <li key={c.id} className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded hover:shadow-md transition-shadow">
+                <li key={c.id} className="flex justify-between items-center bg-white p-2 border-2 border-[#87CEFA] rounded">
                   <div className="flex items-center gap-2">
                     <div className="flex flex-col gap-1 mr-1">
                       <button onClick={() => moveCategory(index, 'up')} disabled={index === 0} className={`text-lg leading-none ${index === 0 ? 'text-gray-200' : 'text-[#00BFFF] hover:text-[#0000CD] active:scale-90'}`}>▲</button>
@@ -770,16 +797,15 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* -------------------- 登録・一括操作モーダル (サイズ拡大: max-w-[560px]) -------------------- */}
+      {/* -------------------- 登録・一括操作モーダル -------------------- */}
       {isModalOpen && selectedDates.length > 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto custom-scrollbar overscroll-contain">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl md:text-2xl font-bold text-[#0000CD]">{selectedDates.length === 1 ? selectedDates[0].replace(/-/g, '/') : `${selectedDates.length}日分の選択`}</h3>
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-[#FF3356] font-bold text-3xl">&times;</button>
             </div>
             
-            {/* この日の収支記録 */}
             {selectedDates.length === 1 && selectedDayTransactions.length > 0 && (
               <div className="mb-4 md:mb-6 bg-white p-3 rounded border-2 border-[#87CEFA] shadow-inner">
                 <h4 className="font-bold text-sm mb-2 text-[#0000CD] border-b-2 border-[#87CEFA] pb-1">この日の収支記録</h4>
@@ -788,7 +814,7 @@ function Dashboard({ userId }: { userId: string }) {
                     <div key={tx.id} className="flex justify-between items-center text-sm border-b border-gray-100 pb-1">
                       <div className="flex-1">
                         <span className={`font-bold mr-2 ${tx.type === 'income' ? 'text-[#0000CD]' : 'text-[#FF3356]'}`}>{tx.type === 'income' ? '収入' : '支出'}</span>
-                        <span className="text-gray-700 font-semibold">{categories.find(c => c.id === tx.category_id)?.name}</span>
+                        <span className="text-gray-700 font-semibold">{catMap.get(tx.category_id)?.name}</span>
                         <span className="font-bold ml-2 text-black">{tx.amount.toLocaleString()}円</span>
                       </div>
                       <div className="flex gap-2">
@@ -801,14 +827,12 @@ function Dashboard({ userId }: { userId: string }) {
               </div>
             )}
             
-            {/* モーダルタブ */}
             <div className="flex gap-1 mb-4 p-1 bg-[#87CEFA]/30 rounded-lg">
               <button onClick={() => { setModalType('schedule'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'schedule' ? 'bg-[#0000CD] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>予定</button>
               <button onClick={() => { setModalType('income'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'income' ? 'bg-[#00BFFF] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>収入</button>
               <button onClick={() => { setModalType('expense'); setEditingTxId(null); }} className={`flex-1 py-2 rounded text-xs md:text-sm font-bold transition-colors ${modalType === 'expense' ? 'bg-[#FF3356] text-white shadow-md' : 'text-[#0000CD] hover:bg-white/50'}`}>支出</button>
             </div>
             
-            {/* メインフォーム */}
             <form onSubmit={addData} className="flex flex-col gap-4">
               {modalType === 'schedule' ? (
                 <>
@@ -847,7 +871,7 @@ function Dashboard({ userId }: { userId: string }) {
                 <>
                   <div>
                     <label className="block text-sm font-bold mb-1 text-[#0000CD]">金額 (円)</label>
-                    <input type="number" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
+                    <input type="number" inputMode="numeric" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="金額を入力" className="border-2 border-[#87CEFA] p-2 rounded w-full focus:outline-none focus:border-[#00BFFF] font-bold text-lg" />
                   </div>
                   {!editingTxId && (
                     <div className="flex items-center gap-2 bg-white p-2 rounded border border-[#87CEFA]">
@@ -871,8 +895,8 @@ function Dashboard({ userId }: { userId: string }) {
                   >
                     {categoryId ? (
                       <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === categoryId)?.color_code }} />
-                        <span className="font-bold text-[#0000CD] text-base md:text-lg truncate">{categories.find(c => c.id === categoryId)?.name}</span>
+                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: catMap.get(categoryId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-base md:text-lg truncate">{catMap.get(categoryId)?.name}</span>
                       </div>
                     ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
                     <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
@@ -906,10 +930,10 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* -------------------- 予定の詳細・編集モーダル (サイズ拡大: max-w-[560px]) -------------------- */}
+      {/* -------------------- 予定の詳細・編集モーダル -------------------- */}
       {selectedSchedule && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#00BFFF] max-h-[90vh] overflow-y-auto overscroll-contain">
             {isEditingSchedule ? (
               <form onSubmit={saveEditSchedule} className="flex flex-col gap-4">
                 <h3 className="text-xl md:text-2xl font-bold text-[#0000CD] border-b-2 border-[#00BFFF] pb-2">予定の編集</h3>
@@ -933,8 +957,8 @@ function Dashboard({ userId }: { userId: string }) {
                   <div onClick={() => setIsEditCatDropdownOpen(!isEditCatDropdownOpen)} className="border-2 border-[#87CEFA] p-3 rounded w-full flex items-center justify-between cursor-pointer bg-white hover:border-[#00BFFF] transition-colors">
                     {editSchCatId ? (
                       <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: categories.find(c => c.id === editSchCatId)?.color_code }} />
-                        <span className="font-bold text-[#0000CD] text-base truncate">{categories.find(c => c.id === editSchCatId)?.name}</span>
+                        <div className="w-5 h-5 rounded-full shadow-inner border border-gray-200 shrink-0" style={{ backgroundColor: catMap.get(editSchCatId)?.color_code }} />
+                        <span className="font-bold text-[#0000CD] text-base truncate">{catMap.get(editSchCatId)?.name}</span>
                       </div>
                     ) : <span className="text-gray-400 font-bold">カテゴリを選択</span>}
                     <span className="text-[#00BFFF] text-xs font-bold ml-2">▼</span>
@@ -959,7 +983,7 @@ function Dashboard({ userId }: { userId: string }) {
               <>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: categories.find(c => c.id === selectedSchedule.category_id)?.color_code }} />
+                    <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: catMap.get(selectedSchedule.category_id)?.color_code }} />
                     <h3 className="text-xl md:text-2xl font-extrabold text-[#0000CD] break-words">{selectedSchedule.title}</h3>
                   </div>
                   <button onClick={startEditSchedule} className="text-[#00BFFF] font-bold text-sm hover:underline shrink-0">編集</button>
@@ -978,31 +1002,14 @@ function Dashboard({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* -------------------- AIマネジメントモーダル -------------------- */}
+      {/* -------------------- AIマネジメント(対話型) -------------------- */}
       {isAiModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F0F8FF] p-6 md:p-8 rounded-xl w-full max-w-[560px] shadow-2xl border-2 border-[#7100FF]">
-            <div className="flex justify-between items-center mb-4 border-b-2 border-[#7100FF] pb-2">
-              <h3 className="text-xl font-extrabold text-[#7100FF]">スケジュール&タスク診断</h3>
-              <button onClick={() => setIsAiModalOpen(false)} className="text-gray-500 hover:text-black font-bold text-3xl">&times;</button>
-            </div>
-            <div className="space-y-4 text-sm md:text-base">
-              <div className="bg-white p-4 rounded border-l-4 border-[#FF3356] shadow-sm">
-                <div className="font-bold text-[#FF3356] mb-1">【予定・時間管理】</div>
-                <p className="text-gray-800">{generateAiAdvice().scheduleAdvice}</p>
-              </div>
-              <div className="bg-white p-4 rounded border-l-4 border-[#00BFFF] shadow-sm">
-                <div className="font-bold text-[#00BFFF] mb-1">【タスク優先度分析】</div>
-                <p className="text-gray-800">{generateAiAdvice().todoAdvice}</p>
-              </div>
-              <div className="bg-white p-4 rounded border-l-4 border-[#0B970D] shadow-sm">
-                <div className="font-bold text-[#0B970D] mb-1">【予算と買い物のバランス】</div>
-                <p className="text-gray-800">{generateAiAdvice().financeAdvice}</p>
-              </div>
-            </div>
-            <button onClick={() => setIsAiModalOpen(false)} className="w-full mt-6 bg-[#7100FF] text-white p-3 rounded font-bold shadow-md hover:opacity-90">閉じる</button>
-          </div>
-        </div>
+        <AiChatModal supabase={supabase} userId={userId} onClose={() => setIsAiModalOpen(false)} onApplied={fetchData} />
+      )}
+
+      {/* -------------------- カレンダー連携 -------------------- */}
+      {isCalSyncOpen && (
+        <CalendarSyncModal supabase={supabase} userId={userId} onClose={() => setIsCalSyncOpen(false)} />
       )}
 
       {/* -------------------- 問い合わせモーダル -------------------- */}

@@ -19,3 +19,4 @@ export default function RootLayout({
     </html>
   )
 }
+import './mobile.css'
